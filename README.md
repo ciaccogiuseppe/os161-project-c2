@@ -1,5 +1,16 @@
 # COMMITS INFO
 
+## COMMIT 2022/08/04 - 23:20 [GC]
+Error handling in system calls:
+- `read()`
+- `write()`
+
+Syscall write() passes all badcall tests
+Syscall read() passes badcall tests except for the ones requiring lseek()
+
+## COMMIT 35bce95
+Added files in .vscode folder
+
 ## COMMIT 228dcc5, 00beaff 
 Added lab implementations and SHELL option (impl of the last lab):
 - `kern/arch/mips/syscall/syscall.c` (lab 2, 4, 5)
@@ -13,7 +24,6 @@ Added lab implementations and SHELL option (impl of the last lab):
 - `kern/thread/synch.c` (lab 3)
 - `kern/thread/thread.c` (lab 5)
 
-## COMMIT 35bce95
-Added files in .vscode folder
+
 
 

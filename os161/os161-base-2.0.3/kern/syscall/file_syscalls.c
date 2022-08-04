@@ -108,11 +108,11 @@ file_read(int fd, userptr_t buf_ptr, size_t size) {
   struct vnode *vn;
   struct openfile *of;
 
-  if (fd<0||fd>OPEN_MAX) return -1;
+  if (fd < 0 || fd >= OPEN_MAX) return EBADF;
   of = curproc->fileTable[fd];
-  if (of==NULL) return -1;
+  if (of==NULL) return EBADF;
   vn = of->vn;
-  if (vn==NULL) return -1;
+  if (vn==NULL) return EBADF;
 
   iov.iov_ubase = buf_ptr;
   iov.iov_len = size;
@@ -142,11 +142,11 @@ file_write(int fd, userptr_t buf_ptr, size_t size) {
   struct vnode *vn;
   struct openfile *of;
 
-  if (fd<0||fd>OPEN_MAX) return -1;
+  if (fd < 0 || fd >= OPEN_MAX) return EBADF;
   of = curproc->fileTable[fd];
-  if (of==NULL) return -1;
+  if (of==NULL) return EBADF;
   vn = of->vn;
-  if (vn==NULL) return -1;
+  if (vn==NULL) return EBADF;
 
   iov.iov_ubase = buf_ptr;
   iov.iov_len = size;
