@@ -89,7 +89,7 @@ struct proc {
 	struct semaphore *p_sem;
 #else
     struct cv *p_cv;
-    struct lock *p_lock;
+    struct lock *p_cv_lock;
 #endif
 #endif
 };

@@ -44,6 +44,7 @@ sys__exit(int status)
 int
 sys_waitpid(pid_t pid, userptr_t statusp, int options, int *errp)
 {
+  *errp=0;
 #if OPT_SHELL
   struct proc *p = proc_search_pid(pid);
   int s;
@@ -87,6 +88,7 @@ int sys_fork(struct trapframe *ctf, pid_t *retval, int *errp) {
   struct proc *newp;
   int result;
 
+  *errp=0;
   KASSERT(curproc != NULL);
 
   newp = proc_create_runprogram(curproc->p_name);

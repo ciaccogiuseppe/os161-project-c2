@@ -117,7 +117,7 @@ proc_init_waitpid(struct proc *proc, const char *name) {
   proc->p_sem = sem_create(name, 0);
 #else
   proc->p_cv = cv_create(name);
-  proc->p_lock = lock_create(name);
+  proc->p_cv_lock = lock_create(name);
 #endif
 #else
   (void)proc;
@@ -144,7 +144,7 @@ proc_end_waitpid(struct proc *proc) {
   sem_destroy(proc->p_sem);
 #else
   cv_destroy(proc->p_cv);
-  lock_destroy(proc->p_lock);
+  lock_destroy(proc->p_cv_lock);
 #endif
 #else
   (void)proc;
@@ -444,9 +444,9 @@ proc_wait(struct proc *proc)
 #if USE_SEMAPHORE_FOR_WAITPID
         P(proc->p_sem);
 #else
-        lock_acquire(proc->p_lock);
+        lock_acquire(proc->p_cv_lock);
         cv_wait(proc->p_cv);
-        lock_release(proc->p_lock);
+        lock_release(proc->p_cv_lock);
 #endif
         return_status = proc->p_status;
         proc_destroy(proc);
@@ -458,7 +458,7 @@ proc_wait(struct proc *proc)
 #endif
 }
 
-
+#if OPT_SHELL
 /* G.Cabodi - 2019 - support for waitpid */
 void
 proc_signal_end(struct proc *proc)
@@ -466,13 +466,12 @@ proc_signal_end(struct proc *proc)
 #if USE_SEMAPHORE_FOR_WAITPID
       V(proc->p_sem);
 #else
-      lock_acquire(proc->p_lock);
+      lock_acquire(proc->p_cv_lock);
       cv_signal(proc->p_cv);
-      lock_release(proc->p_lock);
+      lock_release(proc->p_cv_lock);
 #endif
 }
 
-#if OPT_SHELL
 void 
 proc_file_table_copy(struct proc *psrc, struct proc *pdest) {
   int fd;

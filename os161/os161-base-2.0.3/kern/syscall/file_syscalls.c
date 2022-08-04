@@ -224,6 +224,7 @@ sys_close(int fd, int *errp)
   struct openfile *of=NULL; 
   struct vnode *vn;
 
+  *errp=0;
   if (fd<0||fd>OPEN_MAX) return -1;
   of = curproc->fileTable[fd];
   if (of==NULL) return -1;
@@ -249,6 +250,7 @@ sys_write(int fd, userptr_t buf_ptr, size_t size, int *errp)
   int i;
   char *p = (char *)buf_ptr;
 
+  *errp=0;
   if (fd!=STDOUT_FILENO && fd!=STDERR_FILENO) {
 #if OPT_SHELL
     return file_write(fd, buf_ptr, size);
@@ -271,6 +273,7 @@ sys_read(int fd, userptr_t buf_ptr, size_t size, int *errp)
   int i;
   char *p = (char *)buf_ptr;
 
+  *errp=0;
   if (fd!=STDIN_FILENO) {
 #if OPT_SHELL
     return file_read(fd, buf_ptr, size);
