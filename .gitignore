@@ -2,3 +2,6 @@ os161/toolbuild/
 os161/doxygen/
 os161/os161-base-2.0.3/build/
 os161/tools/
+os161/os161-base-2.0.3/kern/compile/
+os161/os161-base-2.0.3/defs.mk
+os161/root/kernel*
