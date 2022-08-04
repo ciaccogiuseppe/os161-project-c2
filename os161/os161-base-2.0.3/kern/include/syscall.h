@@ -30,7 +30,7 @@
 #ifndef _SYSCALL_H_
 #define _SYSCALL_H_
 
-
+#include <types.h>
 #include <cdefs.h> /* for __DEAD */
 #include "opt-shell.h"
 
@@ -64,13 +64,18 @@ int sys___time(userptr_t user_seconds, userptr_t user_nanoseconds);
 struct openfile;
 void openfileIncrRefCount(struct openfile *of);
 int sys_open(userptr_t path, int openflags, mode_t mode, int *errp);
-int sys_close(int fd);
-int sys_write(int fd, userptr_t buf_ptr, size_t size);
-int sys_read(int fd, userptr_t buf_ptr, size_t size);
+int sys_close(int fd, int *errp);
+int sys_write(int fd, userptr_t buf_ptr, size_t size, int *errp);
+int sys_read(int fd, userptr_t buf_ptr, size_t size, int *errp);
 void sys__exit(int status);
-int sys_waitpid(pid_t pid, userptr_t statusp, int options);
+int sys_waitpid(pid_t pid, userptr_t statusp, int options, int *errp);
 pid_t sys_getpid(void);
-int sys_fork(struct trapframe *ctf, pid_t *retval);
+int sys_fork(struct trapframe *ctf, pid_t *retval, int *errp);
+off_t sys_lseek(int fd, off_t pos, int whence, int *errp);
+int sys_dup2(int oldfd, int newfd, int *errp);
+int sys_chdir(userptr_t path, int *errp);
+int sys___getcwd(userptr_t buf_ptr, size_t buflen, int *errp);
+int sys_execv(userptr_t program, userptr_t args, int *errp);
 #endif
 
 #endif /* _SYSCALL_H_ */

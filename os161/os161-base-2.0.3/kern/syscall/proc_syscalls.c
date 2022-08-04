@@ -42,7 +42,7 @@ sys__exit(int status)
 }
 
 int
-sys_waitpid(pid_t pid, userptr_t statusp, int options)
+sys_waitpid(pid_t pid, userptr_t statusp, int options, int *errp)
 {
 #if OPT_SHELL
   struct proc *p = proc_search_pid(pid);
@@ -82,7 +82,7 @@ call_enter_forked_process(void *tfv, unsigned long dummy) {
   panic("enter_forked_process returned (should not happen)\n");
 }
 
-int sys_fork(struct trapframe *ctf, pid_t *retval) {
+int sys_fork(struct trapframe *ctf, pid_t *retval, int *errp) {
   struct trapframe *tf_child;
   struct proc *newp;
   int result;

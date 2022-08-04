@@ -219,7 +219,7 @@ sys_open(userptr_t path, int openflags, mode_t mode, int *errp)
  * file system calls for open/close
  */
 int
-sys_close(int fd)
+sys_close(int fd, int *errp)
 {
   struct openfile *of=NULL; 
   struct vnode *vn;
@@ -244,7 +244,7 @@ sys_close(int fd)
  * simple file system calls for write/read
  */
 int
-sys_write(int fd, userptr_t buf_ptr, size_t size)
+sys_write(int fd, userptr_t buf_ptr, size_t size, int *errp)
 {
   int i;
   char *p = (char *)buf_ptr;
@@ -266,7 +266,7 @@ sys_write(int fd, userptr_t buf_ptr, size_t size)
 }
 
 int
-sys_read(int fd, userptr_t buf_ptr, size_t size)
+sys_read(int fd, userptr_t buf_ptr, size_t size, int *errp)
 {
   int i;
   char *p = (char *)buf_ptr;

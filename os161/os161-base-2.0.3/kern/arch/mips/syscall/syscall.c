@@ -119,7 +119,7 @@ syscall(struct trapframe *tf)
             break;
 
 	    case SYS_close:
-	        retval = sys_close((int)tf->tf_a0);
+	        retval = sys_close((int)tf->tf_a0, &err);
 			if (retval<0) err = ENOENT; 
             break;
 
@@ -131,7 +131,7 @@ syscall(struct trapframe *tf)
 	    case SYS_write:
 	        retval = sys_write((int)tf->tf_a0,
 				(userptr_t)tf->tf_a1,
-				(size_t)tf->tf_a2);
+				(size_t)tf->tf_a2, &err);
 			/* error: function not implemented */
             if (retval<0) err = ENOSYS; 
 			else err = 0;
@@ -140,7 +140,7 @@ syscall(struct trapframe *tf)
 	    case SYS_read:
 	        retval = sys_read((int)tf->tf_a0,
 				(userptr_t)tf->tf_a1,
-				(size_t)tf->tf_a2);
+				(size_t)tf->tf_a2, &err);
             if (retval<0) err = ENOSYS; 
 			else err = 0;
             break;
@@ -153,7 +153,7 @@ syscall(struct trapframe *tf)
 	    case SYS_waitpid:
 	        retval = sys_waitpid((pid_t)tf->tf_a0,
 				(userptr_t)tf->tf_a1,
-				(int)tf->tf_a2);
+				(int)tf->tf_a2, &err);
             if (retval<0) err = ENOSYS; 
 			else err = 0;
             break;
@@ -165,7 +165,7 @@ syscall(struct trapframe *tf)
             break;
 
 	    case SYS_fork:
-	        err = sys_fork(tf,&retval);
+	        err = sys_fork(tf,&retval, &err);
             break;
 
 #endif
