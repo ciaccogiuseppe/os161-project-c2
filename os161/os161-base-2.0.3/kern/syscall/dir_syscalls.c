@@ -7,12 +7,38 @@
 #include <kern/errno.h>
 #include <current.h>
 #include <types.h>
+#include <copyinout.h>
+#include <kern/fcntl.h>
 #if OPT_SHELL
+
+#define PATH_LEN 128
 // sys_chdir
 int 
 sys_chdir(userptr_t path, int *errp){
-    (void)path;
-    (void)*errp;
+    char kern_buf[PATH_LEN];
+    int err;
+    struct vnode *dir;
+
+    err = copyinstr(path, kern_buf, sizeof(kern_buf), NULL);
+    if (err){
+        *errp = err;
+        return -1;
+    }
+
+    err = vfs_open( kern_buf, O_RDONLY, 0644, &dir );
+	if( err ){
+        *errp = err;
+        return -1;
+    }
+
+    err = vfs_setcurdir( dir );
+
+	vfs_close( dir );
+
+	if( err ){
+        *errp = err;
+        return -1;
+    }
     
     return 0;
 }
@@ -38,8 +64,6 @@ sys___getcwd(userptr_t buf_ptr, size_t buflen, int *errp){
         *errp = err;
         return -1;
     }
-    //return
-    
     return buflen - buf.uio_resid;
 }
 
