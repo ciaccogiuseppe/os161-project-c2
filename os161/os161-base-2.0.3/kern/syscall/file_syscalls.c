@@ -21,6 +21,8 @@
 #include <limits.h>
 #include <uio.h>
 #include <proc.h>
+#include "../arch/mips/include/vm.h"
+#include <addrspace.h>
 
 /* max num of system wide open files */
 #define SYSTEM_OPEN_MAX (10*OPEN_MAX)
@@ -40,6 +42,17 @@ struct openfile systemFileTable[SYSTEM_OPEN_MAX];
 void openfileIncrRefCount(struct openfile *of) {
   if (of!=NULL)
     of->countRef++;
+}
+
+static int
+is_valid_pointer(userptr_t addr, struct addrspace *as){
+  unsigned int pointer = (unsigned int) addr;
+  if (pointer >= MIPS_KSEG0)
+    return 0;
+  if(!(((pointer >= as->as_vbase1) && (pointer < as->as_vbase1 + PAGE_SIZE*as->as_npages1))||
+  ((pointer >= as->as_vbase2) && (pointer < as->as_vbase2 + PAGE_SIZE*as->as_npages2))))
+    return 0;
+  return 1;
 }
 
 #if USE_KERNEL_BUFFER
@@ -241,6 +254,11 @@ sys_open(userptr_t path, int openflags, mode_t mode, int *errp)
   int result;
 
   if(path == NULL){
+    *errp = EFAULT;
+    return -1;
+  }
+
+  if(!is_valid_pointer(path, curproc->p_addrspace)){
     *errp = EFAULT;
     return -1;
   }
