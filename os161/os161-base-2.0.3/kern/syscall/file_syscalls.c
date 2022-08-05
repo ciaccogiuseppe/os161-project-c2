@@ -10,6 +10,7 @@
 #include <clock.h>
 #include <syscall.h>
 #include <current.h>
+#include <kern/fcntl.h>
 #include <lib.h>
 
 #if OPT_SHELL
@@ -61,6 +62,10 @@ file_read(int fd, userptr_t buf_ptr, size_t size, int *errp) {
     *errp = EBADF;
     return -1;
   }
+  if ((of->openflags & 3) == O_WRONLY){
+    *errp = EBADF;
+    return -1;
+  }
   vn = of->vn;
   if (vn==NULL) {
     *errp = EBADF;
@@ -96,6 +101,10 @@ file_write(int fd, userptr_t buf_ptr, size_t size, int *errp) {
   }
   of = curproc->fileTable[fd];
   if (of==NULL) {
+    *errp = EBADF;
+    return -1;
+  }
+  if ((of->openflags & 3) == O_RDONLY){
     *errp = EBADF;
     return -1;
   }
@@ -135,6 +144,10 @@ file_read(int fd, userptr_t buf_ptr, size_t size, int *errp) {
   } 
   of = curproc->fileTable[fd];
   if (of==NULL){
+    *errp = EBADF;
+    return -1;
+  }
+  if ((of->openflags & 3) == O_WRONLY){
     *errp = EBADF;
     return -1;
   }
@@ -178,7 +191,12 @@ file_write(int fd, userptr_t buf_ptr, size_t size, int *errp) {
     return -1;
   }
   of = curproc->fileTable[fd];
+  
   if (of==NULL){
+    *errp = EBADF;
+    return -1;
+  }
+  if ((of->openflags & 3)== O_RDONLY){
     *errp = EBADF;
     return -1;
   }

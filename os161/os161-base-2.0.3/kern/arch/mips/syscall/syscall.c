@@ -163,6 +163,10 @@ syscall(struct trapframe *tf)
 	        err = sys_fork(tf,&retval, &err);
             break;
 
+		case SYS___getcwd:
+			retval = sys___getcwd((userptr_t)tf->tf_a0, (size_t)tf->tf_a1, &err);
+			break;
+
 #endif
 
 	    default:
