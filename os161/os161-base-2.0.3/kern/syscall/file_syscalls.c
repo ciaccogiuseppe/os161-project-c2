@@ -31,6 +31,7 @@ struct openfile {
   struct vnode *vn;
   off_t offset;	
   unsigned int countRef;
+  int openflags;
 };
 
 struct openfile systemFileTable[SYSTEM_OPEN_MAX];
@@ -43,7 +44,7 @@ void openfileIncrRefCount(struct openfile *of) {
 #if USE_KERNEL_BUFFER
 
 static int
-file_read(int fd, userptr_t buf_ptr, size_t size) {
+file_read(int fd, userptr_t buf_ptr, size_t size, int *errp) {
   struct iovec iov;
   struct uio ku;
   int result, nread;
@@ -51,17 +52,27 @@ file_read(int fd, userptr_t buf_ptr, size_t size) {
   struct openfile *of;
   void *kbuf;
 
-  if (fd<0||fd>OPEN_MAX) return -1;
+  if (fd < 0 || fd > OPEN_MAX) {
+    *errp = EBADF;
+    return -1;
+  }
   of = curproc->fileTable[fd];
-  if (of==NULL) return -1;
+  if (of==NULL) {
+    *errp = EBADF;
+    return -1;
+  }
   vn = of->vn;
-  if (vn==NULL) return -1;
+  if (vn==NULL) {
+    *errp = EBADF;
+    return -1;
+  }
 
   kbuf = kmalloc(size);
   uio_kinit(&iov, &ku, kbuf, size, of->offset, UIO_READ);
   result = VOP_READ(vn, &ku);
   if (result) {
-    return result;
+    *errp = result;
+    return -1;
   }
   of->offset = ku.uio_offset;
   nread = size - ku.uio_resid;
@@ -71,7 +82,7 @@ file_read(int fd, userptr_t buf_ptr, size_t size) {
 }
 
 static int
-file_write(int fd, userptr_t buf_ptr, size_t size) {
+file_write(int fd, userptr_t buf_ptr, size_t size, int *errp) {
   struct iovec iov;
   struct uio ku;
   int result, nwrite;
@@ -79,18 +90,28 @@ file_write(int fd, userptr_t buf_ptr, size_t size) {
   struct openfile *of;
   void *kbuf;
 
-  if (fd<0||fd>OPEN_MAX) return -1;
+  if (fd < 0 || fd > OPEN_MAX) {
+    *errp = EBADF;
+    return -1;
+  }
   of = curproc->fileTable[fd];
-  if (of==NULL) return -1;
+  if (of==NULL) {
+    *errp = EBADF;
+    return -1;
+  }
   vn = of->vn;
-  if (vn==NULL) return -1;
+  if (vn==NULL) {
+    *errp = EBADF;
+    return -1;
+  }
 
   kbuf = kmalloc(size);
   copyin(buf_ptr,kbuf,size);
   uio_kinit(&iov, &ku, kbuf, size, of->offset, UIO_WRITE);
   result = VOP_WRITE(vn, &ku);
   if (result) {
-    return result;
+    *errp = result;
+    return -1;
   }
   kfree(kbuf);
   of->offset = ku.uio_offset;
@@ -101,18 +122,27 @@ file_write(int fd, userptr_t buf_ptr, size_t size) {
 #else
 
 static int
-file_read(int fd, userptr_t buf_ptr, size_t size) {
+file_read(int fd, userptr_t buf_ptr, size_t size, int *errp) {
   struct iovec iov;
   struct uio u;
   int result;
   struct vnode *vn;
   struct openfile *of;
 
-  if (fd < 0 || fd >= OPEN_MAX) return EBADF;
+  if (fd < 0 || fd >= OPEN_MAX){
+    *errp = EBADF;
+    return -1;
+  } 
   of = curproc->fileTable[fd];
-  if (of==NULL) return EBADF;
+  if (of==NULL){
+    *errp = EBADF;
+    return -1;
+  }
   vn = of->vn;
-  if (vn==NULL) return EBADF;
+  if (vn==NULL){
+    *errp = EBADF;
+    return -1;
+  }
 
   iov.iov_ubase = buf_ptr;
   iov.iov_len = size;
@@ -127,7 +157,8 @@ file_read(int fd, userptr_t buf_ptr, size_t size) {
 
   result = VOP_READ(vn, &u);
   if (result) {
-    return result;
+    *errp = result;
+    return -1;
   }
 
   of->offset = u.uio_offset;
@@ -135,18 +166,27 @@ file_read(int fd, userptr_t buf_ptr, size_t size) {
 }
 
 static int
-file_write(int fd, userptr_t buf_ptr, size_t size) {
+file_write(int fd, userptr_t buf_ptr, size_t size, int *errp) {
   struct iovec iov;
   struct uio u;
   int result, nwrite;
   struct vnode *vn;
   struct openfile *of;
 
-  if (fd < 0 || fd >= OPEN_MAX) return EBADF;
+  if (fd < 0 || fd >= OPEN_MAX){
+    *errp = EBADF;
+    return -1;
+  }
   of = curproc->fileTable[fd];
-  if (of==NULL) return EBADF;
+  if (of==NULL){
+    *errp = EBADF;
+    return -1;
+  }
   vn = of->vn;
-  if (vn==NULL) return EBADF;
+  if (vn==NULL){
+    *errp = EBADF;
+    return -1;
+  }
 
   iov.iov_ubase = buf_ptr;
   iov.iov_len = size;
@@ -161,7 +201,8 @@ file_write(int fd, userptr_t buf_ptr, size_t size) {
 
   result = VOP_WRITE(vn, &u);
   if (result) {
-    return result;
+    *errp = result;
+    return -1;
   }
   of->offset = u.uio_offset;
   nwrite = size - u.uio_resid;
@@ -181,9 +222,14 @@ sys_open(userptr_t path, int openflags, mode_t mode, int *errp)
   struct openfile *of=NULL;; 	
   int result;
 
+  if(path == NULL){
+    *errp = EFAULT;
+    return -1;
+  }
+
   result = vfs_open((char *)path, openflags, mode, &v);
   if (result) {
-    *errp = ENOENT;
+    *errp = result;
     return -1;
   }
   /* search system open file table */
@@ -193,6 +239,7 @@ sys_open(userptr_t path, int openflags, mode_t mode, int *errp)
       of->vn = v;
       of->offset = 0; // TODO: handle offset with append
       of->countRef = 1;
+      of->openflags = openflags;
       break;
     }
   }
@@ -203,14 +250,14 @@ sys_open(userptr_t path, int openflags, mode_t mode, int *errp)
   else {
     for (fd=STDERR_FILENO+1; fd<OPEN_MAX; fd++) {
       if (curproc->fileTable[fd] == NULL) {
-	curproc->fileTable[fd] = of;
-	return fd;
+	      curproc->fileTable[fd] = of;
+	      return fd;
       }
     }
     // no free slot in process open file table
     *errp = EMFILE;
   }
-  
+
   vfs_close(v);
   return -1;
 }
@@ -253,7 +300,7 @@ sys_write(int fd, userptr_t buf_ptr, size_t size, int *errp)
   *errp=0;
   if (fd!=STDOUT_FILENO && fd!=STDERR_FILENO) {
 #if OPT_SHELL
-    return file_write(fd, buf_ptr, size);
+    return file_write(fd, buf_ptr, size, errp);
 #else
     kprintf("sys_write supported only to stdout\n");
     return -1;
@@ -276,7 +323,7 @@ sys_read(int fd, userptr_t buf_ptr, size_t size, int *errp)
   *errp=0;
   if (fd!=STDIN_FILENO) {
 #if OPT_SHELL
-    return file_read(fd, buf_ptr, size);
+    return file_read(fd, buf_ptr, size, errp);
 #else
     kprintf("sys_read supported only to stdin\n");
     return -1;

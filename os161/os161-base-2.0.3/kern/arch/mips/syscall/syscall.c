@@ -132,17 +132,12 @@ syscall(struct trapframe *tf)
 	        retval = sys_write((int)tf->tf_a0,
 				(userptr_t)tf->tf_a1,
 				(size_t)tf->tf_a2, &err);
-			/* error: function not implemented */
-            if (retval<0) err = ENOSYS; 
-			else err = 0;
             break;
 
 	    case SYS_read:
 	        retval = sys_read((int)tf->tf_a0,
 				(userptr_t)tf->tf_a1,
 				(size_t)tf->tf_a2, &err);
-            if (retval<0) err = ENOSYS; 
-			else err = 0;
             break;
 
 	    case SYS__exit:
