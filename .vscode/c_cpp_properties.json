@@ -53,7 +53,7 @@
                 "${env:HOME}/os161-project-c2/os161/root/include/types",
                 "${env:HOME}/os161-project-c2/os161/root/include/sys",
                 "${env:HOME}/os161-project-c2/os161/root/include/machine",
-                "${workspaceFolder}/os161/os161-base-2.0.3/kern/compile/SHELL"
+                "${env:HOME}/os161-project-c2/os161/os161-base-2.0.3/kern/compile/SHELL"
             ],
             "defines": [],
             "compilerPath": "${env:HOME}/os161-project-c2/os161/tools/bin/mips-harvard-os161-gcc",
