@@ -12,9 +12,6 @@
 #include <current.h>
 #include <kern/fcntl.h>
 #include <lib.h>
-
-#if OPT_SHELL
-
 #include <copyinout.h>
 #include <vnode.h>
 #include <vfs.h>
@@ -23,6 +20,8 @@
 #include <proc.h>
 #include "../arch/mips/include/vm.h"
 #include <addrspace.h>
+#include <kern/seek.h>
+#include <kern/stat.h>
 
 /* max num of system wide open files */
 #define SYSTEM_OPEN_MAX (10*OPEN_MAX)
@@ -322,7 +321,7 @@ sys_close(int fd, int *errp)
   return 0;
 }
 
-#endif
+
 
 /*
  * simple file system calls for write/read
@@ -334,13 +333,10 @@ sys_write(int fd, userptr_t buf_ptr, size_t size, int *errp)
   char *p = (char *)buf_ptr;
 
   *errp=0;
-  if (fd!=STDOUT_FILENO && fd!=STDERR_FILENO) {
-#if OPT_SHELL
+  if ((fd!=STDOUT_FILENO && fd!=STDERR_FILENO)||
+    (fd==STDOUT_FILENO && (curproc->fileTable[STDOUT_FILENO])!=NULL)||
+    (fd==STDERR_FILENO && (curproc->fileTable[STDERR_FILENO])!=NULL)) {
     return file_write(fd, buf_ptr, size, errp);
-#else
-    kprintf("sys_write supported only to stdout\n");
-    return -1;
-#endif
   }
 
   for (i=0; i<(int)size; i++) {
@@ -357,13 +353,8 @@ sys_read(int fd, userptr_t buf_ptr, size_t size, int *errp)
   char *p = (char *)buf_ptr;
 
   *errp=0;
-  if (fd!=STDIN_FILENO) {
-#if OPT_SHELL
+  if (fd!=STDIN_FILENO || (fd==STDIN_FILENO && (curproc->fileTable[STDIN_FILENO])!=NULL)) {
     return file_read(fd, buf_ptr, size, errp);
-#else
-    kprintf("sys_read supported only to stdin\n");
-    return -1;
-#endif
   }
 
   for (i=0; i<(int)size; i++) {
@@ -373,4 +364,104 @@ sys_read(int fd, userptr_t buf_ptr, size_t size, int *errp)
   }
 
   return (int)size;
+}
+
+off_t 
+sys_lseek(int fd, off_t pos, int whence, int *errp){
+  struct openfile *of;
+  off_t new_offset;
+  struct stat st;
+  int result;
+
+  if(fd >=0 && fd <= STDERR_FILENO){
+    *errp = ESPIPE;
+    return -1;
+  }
+
+  if(fd < 0 || fd >= OPEN_MAX){
+    *errp = EBADF;
+    return -1;
+  }
+
+  of = curproc->fileTable[fd];
+
+  if(of==NULL){
+    *errp = EBADF;
+    return -1;
+  }
+
+  result = VOP_ISSEEKABLE(of->vn);
+  if(result){
+    *errp = result;
+    return -1;
+  }
+
+  switch(whence){
+    case SEEK_SET:
+      if(pos < 0){
+        *errp = EINVAL;
+        return -1;
+      }
+      new_offset = pos;
+      break;
+    case SEEK_CUR:
+      if((of->offset + pos) < 0){
+        *errp = EINVAL;
+        return -1;
+      }
+      new_offset = of->offset + pos;
+      break;
+    case SEEK_END:
+      result = VOP_STAT(of->vn, &st);
+      if(result){
+        *errp = result;
+        return -1;
+      }
+      if((st.st_size + pos)<0){
+        *errp = EINVAL;
+        return -1;
+      }
+      new_offset = st.st_size + pos;
+      break;
+    default:
+      *errp = EINVAL;
+      return -1;
+  }
+  
+  of->offset = new_offset;
+  return new_offset;
+}
+
+int 
+sys_dup2(int oldfd, int newfd, int *errp){
+  struct openfile *old_of, *new_of;
+  int result;
+
+  if(oldfd < 0 || newfd < 0 || oldfd >= OPEN_MAX || newfd >= OPEN_MAX){
+    *errp = EBADF;
+    return -1;
+  }
+
+  if(oldfd == newfd)
+    return newfd;
+  
+  old_of = curproc->fileTable[oldfd];
+  new_of = curproc->fileTable[newfd];
+
+  if(old_of == NULL){
+    *errp = EBADF;
+    return -1;
+  }
+
+  if(new_of != NULL){
+    result = sys_close(newfd, errp);
+    if(result==-1)
+      return -1;
+  }
+  
+  curproc->fileTable[newfd] = old_of;
+  old_of->countRef++;
+  VOP_INCREF(old_of->vn);
+
+  return newfd;
 }
