@@ -391,8 +391,8 @@ sys_lseek(int fd, off_t pos, int whence, int *errp){
   }
 
   result = VOP_ISSEEKABLE(of->vn);
-  if(result){
-    *errp = result;
+  if(!result){
+    *errp = ESPIPE;
     return -1;
   }
 
@@ -460,7 +460,7 @@ sys_dup2(int oldfd, int newfd, int *errp){
   }
   
   curproc->fileTable[newfd] = old_of;
-  old_of->countRef++;
+  openfileIncrRefCount(old_of);
   VOP_INCREF(old_of->vn);
 
   return newfd;
