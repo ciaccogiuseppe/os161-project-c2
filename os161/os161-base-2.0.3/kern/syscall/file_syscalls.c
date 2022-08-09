@@ -84,6 +84,11 @@ file_read(int fd, userptr_t buf_ptr, size_t size, int *errp) {
     return -1;
   }
 
+  if(!is_valid_pointer(buf_ptr, curproc->p_addrspace)){
+    *errp = EFAULT;
+    return -1;
+  }
+
   kbuf = kmalloc(size);
   uio_kinit(&iov, &ku, kbuf, size, of->offset, UIO_READ);
   result = VOP_READ(vn, &ku);
@@ -123,6 +128,11 @@ file_write(int fd, userptr_t buf_ptr, size_t size, int *errp) {
   vn = of->vn;
   if (vn==NULL) {
     *errp = EBADF;
+    return -1;
+  }
+
+  if(!is_valid_pointer(buf_ptr, curproc->p_addrspace)){
+    *errp = EFAULT;
     return -1;
   }
 
@@ -166,6 +176,11 @@ file_read(int fd, userptr_t buf_ptr, size_t size, int *errp) {
   vn = of->vn;
   if (vn==NULL){
     *errp = EBADF;
+    return -1;
+  }
+
+  if(!is_valid_pointer(buf_ptr, curproc->p_addrspace)){
+    *errp = EFAULT;
     return -1;
   }
 
@@ -218,6 +233,11 @@ file_write(int fd, userptr_t buf_ptr, size_t size, int *errp) {
     return -1;
   }
 
+  if(!is_valid_pointer(buf_ptr, curproc->p_addrspace)){
+    *errp = EFAULT;
+    return -1;
+  }
+
   iov.iov_ubase = buf_ptr;
   iov.iov_len = size;
 
@@ -251,6 +271,7 @@ sys_open(userptr_t path, int openflags, mode_t mode, int *errp)
   struct vnode *v;
   struct openfile *of=NULL;; 	
   int result;
+  char kbuf[PATH_MAX];
 
   if(path == NULL){
     *errp = EFAULT;
@@ -262,7 +283,13 @@ sys_open(userptr_t path, int openflags, mode_t mode, int *errp)
     return -1;
   }
 
-  result = vfs_open((char *)path, openflags, mode, &v);
+  result = copyinstr(path, kbuf, sizeof(kbuf), NULL);
+  if(result){
+    *errp = result;
+    return -1;
+  }
+
+  result = vfs_open(kbuf, openflags, mode, &v);
   if (result) {
     *errp = result;
     return -1;
@@ -381,7 +408,7 @@ sys_read(int fd, userptr_t buf_ptr, size_t size, int *errp)
 off_t 
 sys_lseek(int fd, off_t pos, int whence, int *errp){
   struct openfile *of;
-  off_t new_offset;
+  off_t new_offset = 0;
   struct stat st;
   int result;
 
@@ -392,6 +419,11 @@ sys_lseek(int fd, off_t pos, int whence, int *errp){
 
   if(fd < 0 || fd >= OPEN_MAX){
     *errp = EBADF;
+    return -1;
+  }
+
+  if(whence!=SEEK_SET && whence!=SEEK_CUR && whence!=SEEK_END){
+    *errp = EINVAL;
     return -1;
   }
 

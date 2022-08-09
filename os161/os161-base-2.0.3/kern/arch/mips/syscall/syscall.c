@@ -36,7 +36,11 @@
 #include <current.h>
 #include <addrspace.h>
 #include <syscall.h>
+#include <copyinout.h>
 
+#define MAKE_64BITS(x,y) (((int64_t)x) << 32 | y)
+#define GET_LO(x) ((int32_t) x & 0x00000000FFFFFFFF)
+#define GET_HI(x) ((int32_t) x & 0xFFFFFFFF00000000)
 
 /*
  * System call dispatcher.
@@ -81,7 +85,10 @@ syscall(struct trapframe *tf)
 {
 	int callno;
 	int32_t retval;
+	int64_t retval64;
 	int err = 0;
+	int extra_param;
+	bool ret64 = false;
 
 	KASSERT(curthread != NULL);
 	KASSERT(curthread->t_curspl == 0);
@@ -170,9 +177,13 @@ syscall(struct trapframe *tf)
 			retval = sys_chdir((userptr_t)tf->tf_a0, &err);
 			break;
 		case SYS_lseek:
-			retval = sys_lseek((int)tf->tf_a0, 
-				(off_t) tf->tf_a1,
-				(int)tf->tf_a2, &err);
+			err = copyin((userptr_t)(tf->tf_sp + 16), &extra_param, sizeof(int));
+			if(err)
+				break;
+			retval64 = sys_lseek((int)tf->tf_a0, 
+				(off_t) MAKE_64BITS(tf->tf_a2, tf->tf_a3),
+				(int)extra_param, &err);
+			ret64 = true;
 			break;
 		case SYS_dup2:
 			retval = sys_dup2((int)tf->tf_a0,
@@ -199,8 +210,14 @@ syscall(struct trapframe *tf)
 	}
 	else {
 		/* Success. */
-		tf->tf_v0 = retval;
-		tf->tf_a3 = 0;      /* signal no error */
+		if(ret64){
+			tf->tf_v0 = GET_HI(retval64);
+			tf->tf_v1 = GET_LO(retval64);
+			tf->tf_a3 = 0;
+		} else {
+			tf->tf_v0 = retval;
+			tf->tf_a3 = 0;      /* signal no error */
+		}
 	}
 
 	/*
