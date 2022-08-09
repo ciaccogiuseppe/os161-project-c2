@@ -300,22 +300,34 @@ sys_open(userptr_t path, int openflags, mode_t mode, int *errp)
 /*
  * file system calls for open/close
  */
-int
-sys_close(int fd, int *errp)
-{
-  struct openfile *of=NULL; 
+int sys_close(int fd, int *errp) {
+  struct openfile *of = NULL; 
   struct vnode *vn;
 
-  *errp=0;
-  if (fd<0||fd>OPEN_MAX) return -1;
+  *errp = 0;
+  // In order to pass testbin/badcall tests, fd==OPEN_MAX should return an error
+  if (fd < 0 || fd >= OPEN_MAX) {
+    *errp = EBADF;
+    return -1;
+  }
+
   of = curproc->fileTable[fd];
-  if (of==NULL) return -1;
+  if (of == NULL) {
+    *errp = EBADF;
+    return -1;
+  }
+
   curproc->fileTable[fd] = NULL;
 
-  if (--of->countRef > 0) return 0; // just decrement ref cnt
+  if (--of->countRef > 0)
+    return 0; // just decrement ref cnt
+  
   vn = of->vn;
   of->vn = NULL;
-  if (vn==NULL) return -1;
+  if (vn == NULL) {
+    *errp = EIO;
+    return -1;
+  }
 
   vfs_close(vn);	
   return 0;
