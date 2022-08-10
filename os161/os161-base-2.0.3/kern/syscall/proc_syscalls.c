@@ -28,6 +28,7 @@ sys__exit(int status)
 #if OPT_SHELL
   struct proc *p = curproc;
   p->p_status = status & 0xff; /* just lower 8 bits returned */
+  p->p_exited = 1;
   proc_remthread(curthread);
   proc_signal_end(p);
 #else
@@ -41,30 +42,59 @@ sys__exit(int status)
   (void) status; // TODO: status handling
 }
 
-int
-sys_waitpid(pid_t pid, userptr_t statusp, int options, int *errp)
-{
-  *errp=0;
-#if OPT_SHELL
-  struct proc *p = proc_search_pid(pid);
-  int s;
-  (void)options; /* not handled */
-  if (p==NULL) return -1;
-  s = proc_wait(p);
-  if (statusp!=NULL) 
-    *(int*)statusp = s;
-  return pid;
-#else
-  (void)options; /* not handled */
-  (void)pid;
-  (void)statusp;
-  return -1;
-#endif
+static int is_valid_pointer(userptr_t addr, struct addrspace *as){
+  unsigned int pointer = (unsigned int) addr;
+  if (pointer >= MIPS_KSEG0)
+    return 0;
+  if(!(((pointer >= as->as_vbase1) && (pointer < as->as_vbase1 + PAGE_SIZE*as->as_npages1))||
+  ((pointer >= as->as_vbase2) && (pointer < as->as_vbase2 + PAGE_SIZE*as->as_npages2))))
+    return 0;
+  return 1;
 }
 
-pid_t
-sys_getpid(void)
-{
+int sys_waitpid(pid_t pid, userptr_t statusp, int options, int *errp) {
+  struct proc *p = proc_search_pid(pid);
+  int s;
+  
+  // Check if the pid argument named a nonexistent process
+  *errp = 0;
+  if (p == NULL) {
+	  *errp = ESRCH;
+	  return -1;
+  }
+  
+  // The options argument should be 0. It's not required to implement any options
+  if (options != 0) {
+    *errp = EINVAL;
+    return -1;
+  }
+
+  // Check if the status argument was an invalid pointer  
+  if(statusp != NULL && !is_valid_pointer(statusp, curproc->p_addrspace)){
+    *errp = EFAULT;
+    return -1;
+  }
+
+  // if the process that called the waitpid is not the parent
+  if (p->parent_proc != curproc) {
+    *errp = ECHILD;
+    return -1;
+  }
+
+  // Process has already exited
+  if (p->p_exited == 1)
+    return pid;
+  
+  s = proc_wait(p);
+
+  //The status_ptr pointer may also be NULL, in which case waitpid() ignores the child's return status
+  if (statusp != NULL)
+    *(int*)statusp = s;
+  
+  return pid;
+}
+
+pid_t sys_getpid(void) {
 #if OPT_SHELL
   KASSERT(curproc != NULL);
   return curproc->p_pid;
@@ -116,6 +146,8 @@ int sys_fork(struct trapframe *ctf, pid_t *retval, int *errp) {
 
   /* TO BE DONE: linking parent/child, so that child terminated 
      on parent exit */
+  // Parent/child linking
+  newp->parent_proc = curproc; 
 
   result = thread_fork(
 		 curthread->t_name, newp,
@@ -126,10 +158,10 @@ int sys_fork(struct trapframe *ctf, pid_t *retval, int *errp) {
     proc_destroy(newp);
     kfree(tf_child);
     return ENOMEM;
-  }
+  } 
 
   *retval = newp->p_pid;
-
   return 0;
 }
+
 #endif
