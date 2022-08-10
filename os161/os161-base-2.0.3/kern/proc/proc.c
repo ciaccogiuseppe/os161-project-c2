@@ -74,7 +74,8 @@ proc_search_pid(pid_t pid) {
   struct proc *p;
   
   // Check if the pid argument is valid (pid 0 is not used)
-  if (pid <= 0 || pid >= MAX_PROC)
+  // The upper bound is MAX_PROC > PID_MAX
+  if (pid < PID_MIN || pid >= MAX_PROC)
 	return NULL;
 
   KASSERT(pid>=0 && pid<MAX_PROC);
@@ -311,7 +312,6 @@ proc_create_runprogram(const char *name)
 	if (newproc == NULL) {
 		return NULL;
 	}
-
 	/* VM fields */
 
 	newproc->p_addrspace = NULL;
