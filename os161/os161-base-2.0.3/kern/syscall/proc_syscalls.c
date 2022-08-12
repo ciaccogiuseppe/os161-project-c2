@@ -18,6 +18,8 @@
 #include <mips/trapframe.h>
 #include <current.h>
 #include <synch.h>
+#include <kern/fcntl.h>
+#include <vfs.h>
 
 /*
  * system calls for process management
@@ -109,7 +111,6 @@ pid_t sys_getpid(void) {
 #endif
 }
 
-#if OPT_SHELL
 static void
 call_enter_forked_process(void *tfv, unsigned long dummy) {
   struct trapframe *tf = (struct trapframe *)tfv;
@@ -169,4 +170,146 @@ int sys_fork(struct trapframe *ctf, pid_t *retval) {
   return 0;
 }
 
-#endif
+static int 
+get_argc(char **args, struct addrspace *as, int *errp){
+  int argc;
+  for(argc = 0; args[argc]!=NULL; argc++){
+    if(!is_valid_pointer((userptr_t)(args[argc]), as)){
+      *errp = EFAULT;
+      return -1;
+    }
+  }
+  return argc;
+}
+
+static int
+get_argv(int argc, char **args, vaddr_t *stackptr, vaddr_t *argvptr){
+  int result;
+  vaddr_t stackp = *stackptr, argvp;
+
+  stackp -= (vaddr_t) (argc+1)*sizeof(char*);
+  argvp = stackp;
+
+  for(int i = 0; i < argc; i++){
+    size_t copied = 0;
+    size_t arg_len = strlen(args[i])+1;
+    stackp -= arg_len;
+
+    result = copyoutstr(args[i], (userptr_t) stackp, arg_len, &copied);
+    if(result){
+      return result;
+    }
+
+    result = copyout((void*)stackp, (userptr_t)argvp + i*sizeof(char*),sizeof(char*));
+    if(result){
+      return result;
+    }
+  }
+
+  *stackptr = stackp;
+  *argvptr = argvp;
+  return 0;
+}
+
+int
+sys_execv(userptr_t program, userptr_t args, int *errp)
+{
+	struct addrspace *new_as, *old_as;
+	struct vnode *v;
+	vaddr_t entrypoint, stackptr, argv_ptr;
+	int result, argc;
+  char prg_path[PATH_MAX];
+
+  if(!is_valid_pointer(program, curproc->p_addrspace)){
+    *errp = EFAULT;
+    return -1;
+  }
+
+  if((args == NULL) || (!is_valid_pointer(args, curproc->p_addrspace))){
+    *errp = EFAULT;
+    return -1;
+  }
+
+  result = copyinstr(program, prg_path, sizeof(prg_path), NULL);
+  if(result){
+    *errp = result;
+    return -1;
+  }
+
+  argc = get_argc((char**) args, curproc->p_addrspace, errp);
+  if(argc < 0){
+    return -1;
+  }
+
+	/* Open the file. */
+	result = vfs_open(prg_path, O_RDONLY, 0, &v);
+	if (result) {
+    *errp = result;
+		return -1;
+	}
+
+	/* We should be a new process. */
+	// KASSERT(proc_getas() == NULL);
+
+	/* Create a new address space. */
+	new_as = as_create();
+	if (new_as == NULL) {
+		vfs_close(v);
+    *errp = ENOMEM;
+		return -1;
+	}
+
+  /* Switch to it and activate it. */
+	old_as = proc_setas(new_as);
+	as_activate();
+
+  /* Define the user stack in the address space */
+	result = as_define_stack(new_as, &stackptr);
+	if (result) {
+    vfs_close(v);
+		/* p_addrspace will go away when curproc is destroyed */
+    *errp = result;
+		return -1;
+	}
+
+  result = get_argv(argc, (char**)args, &stackptr, &argv_ptr);
+  if(result){
+    return result;
+  }
+
+	if (std_open(STDIN_FILENO) != STDIN_FILENO){
+    vfs_close(v);
+		return EIO;
+	}
+	if (std_open(STDOUT_FILENO) != STDOUT_FILENO){
+    vfs_close(v);
+		return EIO;
+	}
+	if (std_open(STDERR_FILENO) != STDERR_FILENO){
+    vfs_close(v);
+		return EIO;
+	}
+
+	/* Load the executable. */
+	result = load_elf(v, &entrypoint);
+	if (result) {
+		/* p_addrspace will go away when curproc is destroyed */
+		vfs_close(v);
+    *errp = result;
+		return -1;
+	}
+
+	/* Done with the file now. */
+	vfs_close(v);
+  as_destroy(old_as);
+
+	/* Warp to user mode. */
+	enter_new_process(argc /*argc*/, argc!=0?((userptr_t) argv_ptr):NULL /*userspace addr of argv*/,
+			    NULL /*userspace addr of environment*/,
+			    stackptr, entrypoint);
+
+	/* enter_new_process does not return. */
+	panic("enter_new_process returned\n");
+  *errp = EINVAL;
+	return -1;
+}
