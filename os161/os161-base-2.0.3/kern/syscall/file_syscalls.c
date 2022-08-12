@@ -9,6 +9,7 @@
 #include <kern/errno.h>
 #include <clock.h>
 #include <syscall.h>
+#include <synch.h>
 #include <current.h>
 #include <kern/fcntl.h>
 #include <lib.h>
@@ -28,13 +29,7 @@
 
 #define USE_KERNEL_BUFFER 0
 
-/* system open file table */
-struct openfile {
-  struct vnode *vn;
-  off_t offset;	
-  unsigned int countRef;
-  int openflags;
-};
+
 
 struct openfile systemFileTable[SYSTEM_OPEN_MAX];
 
@@ -179,10 +174,10 @@ file_read(int fd, userptr_t buf_ptr, size_t size, int *errp) {
     return -1;
   }
 
-  if(!is_valid_pointer(buf_ptr, curproc->p_addrspace)){
+  /*if(!is_valid_pointer(buf_ptr, curproc->p_addrspace)){
     *errp = EFAULT;
     return -1;
-  }
+  }*/
 
   iov.iov_ubase = buf_ptr;
   iov.iov_len = size;
@@ -233,10 +228,11 @@ file_write(int fd, userptr_t buf_ptr, size_t size, int *errp) {
     return -1;
   }
 
-  if(!is_valid_pointer(buf_ptr, curproc->p_addrspace)){
+  /*if(!is_valid_pointer(buf_ptr, curproc->p_addrspace)){
     *errp = EFAULT;
     return -1;
-  }
+  }*/
+
 
   iov.iov_ubase = buf_ptr;
   iov.iov_len = size;
@@ -368,30 +364,34 @@ int sys_close(int fd, int *errp) {
 int
 sys_write(int fd, userptr_t buf_ptr, size_t size, int *errp)
 {
-  int i;
-  char *p = (char *)buf_ptr;
+  //int i;
+  //char *p = (char *)buf_ptr;
 
   *errp=0;
+  return file_write(fd, buf_ptr, size, errp);
+  /*
   if ((fd!=STDOUT_FILENO && fd!=STDERR_FILENO)||
     (fd==STDOUT_FILENO && (curproc->fileTable[STDOUT_FILENO])!=NULL)||
     (fd==STDERR_FILENO && (curproc->fileTable[STDERR_FILENO])!=NULL)) {
-    return file_write(fd, buf_ptr, size, errp);
+    
   }
 
   for (i=0; i<(int)size; i++) {
     putch(p[i]);
   }
 
-  return (int)size;
+  return (int)size;*/
 }
 
 int
 sys_read(int fd, userptr_t buf_ptr, size_t size, int *errp)
 {
-  int i;
-  char *p = (char *)buf_ptr;
+  //int i;
+  //char *p = (char *)buf_ptr;
 
   *errp=0;
+  return file_read(fd, buf_ptr, size, errp);
+  /*
   if (fd!=STDIN_FILENO || (fd==STDIN_FILENO && (curproc->fileTable[STDIN_FILENO])!=NULL)) {
     return file_read(fd, buf_ptr, size, errp);
   }
@@ -402,7 +402,7 @@ sys_read(int fd, userptr_t buf_ptr, size_t size, int *errp)
       return i;
   }
 
-  return (int)size;
+  return (int)size;*/
 }
 
 off_t 
@@ -412,10 +412,10 @@ sys_lseek(int fd, off_t pos, int whence, int *errp){
   struct stat st;
   int result;
 
-  if(fd >=0 && fd <= STDERR_FILENO){
+  /*if(fd >=0 && fd <= STDERR_FILENO){
     *errp = ESPIPE;
     return -1;
-  }
+  }*/
 
   if(fd < 0 || fd >= OPEN_MAX){
     *errp = EBADF;
@@ -508,4 +508,64 @@ sys_dup2(int oldfd, int newfd, int *errp){
   VOP_INCREF(old_of->vn);
 
   return newfd;
+}
+
+
+int
+std_open(int fileno){
+  int fd, openflags, i;
+  mode_t mode;
+  struct vnode *v;
+  struct openfile *of=NULL;; 	
+  int result;
+  const char* inpath = "con:";
+  char path[5];
+  
+  strcpy(path, inpath);
+  switch(fileno){
+    case STDIN_FILENO:
+      openflags = O_RDONLY;
+      mode = 0;
+      fd = STDIN_FILENO;
+      break;
+    case STDOUT_FILENO:
+      openflags = O_WRONLY;
+      mode = 0;
+      fd = STDOUT_FILENO;
+      break;
+    case STDERR_FILENO:
+      openflags = O_WRONLY;
+      mode = 0;
+      fd = STDERR_FILENO;
+      break;
+    default:
+      return -1;
+      break;
+  }
+
+
+  result = vfs_open(path, openflags, mode, &v);
+  if (result) {
+    return -1;
+  }
+  /* search system open file table */
+  for (i=0; i<SYSTEM_OPEN_MAX; i++) {
+    if (systemFileTable[i].vn==NULL) {
+      of = &systemFileTable[i];
+      of->vn = v;
+      of->offset = 0; // TODO: handle offset with append
+      of->countRef = 1;
+      of->openflags = openflags;
+      break;
+    }
+  }
+  if (of==NULL) { 
+    return -1;
+  }
+
+
+  curproc->fileTable[fd] = of;
+  vfs_close(v);
+  return fd;
+
 }

@@ -44,6 +44,7 @@
 #include <vfs.h>
 #include <syscall.h>
 #include <test.h>
+#include <kern/unistd.h>
 
 /*
  * Load program "progname" and start running it in usermode.
@@ -78,6 +79,16 @@ runprogram(char *progname)
 	/* Switch to it and activate it. */
 	proc_setas(as);
 	as_activate();
+
+	if (std_open(STDIN_FILENO) != STDIN_FILENO){
+		return EIO;
+	}
+	if (std_open(STDOUT_FILENO) != STDOUT_FILENO){
+		return EIO;
+	}
+	if (std_open(STDERR_FILENO) != STDERR_FILENO){
+		return EIO;
+	}
 
 	/* Load the executable. */
 	result = load_elf(v, &entrypoint);

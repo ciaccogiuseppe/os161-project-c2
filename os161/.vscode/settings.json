@@ -5,6 +5,7 @@
         "opt-noasserts.h": "c",
         "version.h": "c",
         "errno.h": "c",
-        "current.h": "c"
+        "current.h": "c",
+        "stat.h": "c"
     }
 }

@@ -49,6 +49,7 @@
 #include <addrspace.h>
 #include <vnode.h>
 #include <syscall.h>
+#include <kern/unistd.h>
 
 #if OPT_SHELL
 #include <synch.h>
@@ -181,7 +182,7 @@ proc_create(const char *name)
 
 	proc_init_waitpid(proc,name);
 #if OPT_SHELL
-        bzero(proc->fileTable,OPEN_MAX*sizeof(struct openfile *));
+        bzero(proc->fileTable,OPEN_MAX*sizeof(struct openfile *));	
 #endif
 	return proc;
 }
