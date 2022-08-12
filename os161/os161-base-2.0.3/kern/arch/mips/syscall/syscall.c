@@ -155,18 +155,14 @@ syscall(struct trapframe *tf)
 	        retval = sys_waitpid((pid_t)tf->tf_a0,
 				(userptr_t)tf->tf_a1,
 				(int)tf->tf_a2, &err);
-            if (retval<0) err = ENOSYS; 
-			else err = 0;
             break;
 
 	    case SYS_getpid:
 	        retval = sys_getpid();
-            if (retval<0) err = ENOSYS; 
-			else err = 0;
             break;
 
 	    case SYS_fork:
-	        err = sys_fork(tf,&retval, &err);
+	        err = sys_fork(tf, &retval);
             break;
 
 		case SYS___getcwd:

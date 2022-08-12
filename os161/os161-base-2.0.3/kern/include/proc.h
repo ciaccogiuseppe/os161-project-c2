@@ -85,6 +85,9 @@ struct proc {
     int p_status;                   /* status as obtained by exit() */
     pid_t p_pid;                    /* process pid */
 	struct openfile *fileTable[OPEN_MAX];
+
+	int p_exited;
+	struct proc *parent_proc;
 #if USE_SEMAPHORE_FOR_WAITPID
 	struct semaphore *p_sem;
 #else
@@ -93,6 +96,7 @@ struct proc {
 #endif
 #endif
 };
+
 
 /* This is the process structure for the kernel and for kernel-only threads. */
 extern struct proc *kproc;

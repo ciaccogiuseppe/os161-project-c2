@@ -51,7 +51,6 @@
 #include <syscall.h>
 #include <kern/unistd.h>
 
-#if OPT_SHELL
 #include <synch.h>
 
 #define MAX_PROC 100
@@ -62,7 +61,6 @@ static struct _processTable {
   struct spinlock lk;	/* Lock for this table */
 } processTable;
 
-#endif
 /*
  * The process for the kernel; this holds all the kernel-only threads.
  */
@@ -74,16 +72,19 @@ struct proc *kproc;
  */
 struct proc *
 proc_search_pid(pid_t pid) {
-#if OPT_SHELL
   struct proc *p;
-  KASSERT(pid>=0&&pid<MAX_PROC);
+  
+  // Check if the pid argument is valid (pid 0 is not used)
+  // The upper bound is MAX_PROC > PID_MAX
+  if (pid < PID_MIN || pid >= MAX_PROC)
+	return NULL;
+
+  // KASSERT(pid>=0 && pid<MAX_PROC);
   p = processTable.proc[pid];
-  KASSERT(p->p_pid==pid);
+  if(p!=NULL)
+  	KASSERT(p->p_pid==pid);
+
   return p;
-#else
-  (void)pid;
-  return NULL;
-#endif
 }
 
 /*
@@ -176,6 +177,10 @@ proc_create(const char *name)
 
 	/* VM fields */
 	proc->p_addrspace = NULL;
+	
+	// New fields
+	proc->p_exited = 0;
+	proc->parent_proc = NULL;
 
 	/* VFS fields */
 	proc->p_cwd = NULL;
@@ -309,11 +314,10 @@ proc_create_runprogram(const char *name)
 	if (newproc == NULL) {
 		return NULL;
 	}
-
 	/* VM fields */
 
 	newproc->p_addrspace = NULL;
-
+		
 	/* VFS fields */
 
 	/*
@@ -485,4 +489,5 @@ proc_file_table_copy(struct proc *psrc, struct proc *pdest) {
     }
   }
 }
+
 #endif
