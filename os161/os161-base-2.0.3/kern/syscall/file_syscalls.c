@@ -175,10 +175,10 @@ file_read(int fd, userptr_t buf_ptr, size_t size, int *errp) {
     return -1;
   }
 
-  /*if(!is_valid_pointer(buf_ptr, curproc->p_addrspace)){
+  if(!is_valid_pointer(buf_ptr, curproc->p_addrspace)){
     *errp = EFAULT;
     return -1;
-  }*/
+  }
 
   iov.iov_ubase = buf_ptr;
   iov.iov_len = size;
@@ -229,10 +229,10 @@ file_write(int fd, userptr_t buf_ptr, size_t size, int *errp) {
     return -1;
   }
 
-  /*if(!is_valid_pointer(buf_ptr, curproc->p_addrspace)){
+  if(!is_valid_pointer(buf_ptr, curproc->p_addrspace)){
     *errp = EFAULT;
     return -1;
-  }*/
+  }
 
 
   iov.iov_ubase = buf_ptr;
