@@ -47,7 +47,8 @@ static int is_valid_pointer(userptr_t addr, struct addrspace *as){
   if (pointer >= MIPS_KSEG0)
     return 0;
   if(!(((pointer >= as->as_vbase1) && (pointer < as->as_vbase1 + PAGE_SIZE*as->as_npages1))||
-  ((pointer >= as->as_vbase2) && (pointer < as->as_vbase2 + PAGE_SIZE*as->as_npages2))))
+  ((pointer >= as->as_vbase2) && (pointer < as->as_vbase2 + PAGE_SIZE*as->as_npages2))||
+  (pointer>=MIPS_KSEG0 - PAGE_SIZE*DUMBVM_STACKPAGES)))
     return 0;
   return 1;
 }
@@ -71,6 +72,11 @@ int sys_waitpid(pid_t pid, userptr_t statusp, int options, int *errp) {
 
   // Check if the status argument was an invalid pointer  
   if(statusp != NULL && !is_valid_pointer(statusp, curproc->p_addrspace)){
+    *errp = EFAULT;
+    return -1;
+  }
+
+  if((int)statusp%(sizeof(int))!=0){
     *errp = EFAULT;
     return -1;
   }
@@ -113,12 +119,11 @@ call_enter_forked_process(void *tfv, unsigned long dummy) {
   panic("enter_forked_process returned (should not happen)\n");
 }
 
-int sys_fork(struct trapframe *ctf, pid_t *retval, int *errp) {
+int sys_fork(struct trapframe *ctf, pid_t *retval) {
   struct trapframe *tf_child;
   struct proc *newp;
   int result;
 
-  *errp=0;
   KASSERT(curproc != NULL);
 
   newp = proc_create_runprogram(curproc->p_name);
@@ -134,7 +139,7 @@ int sys_fork(struct trapframe *ctf, pid_t *retval, int *errp) {
     return ENOMEM; 
   }
 
-  proc_file_table_copy(newp,curproc);
+  proc_file_table_copy(curproc, newp);
 
   /* we need a copy of the parent's trapframe */
   tf_child = kmalloc(sizeof(struct trapframe));
@@ -157,7 +162,7 @@ int sys_fork(struct trapframe *ctf, pid_t *retval, int *errp) {
   if (result){
     proc_destroy(newp);
     kfree(tf_child);
-    return ENOMEM;
+    return result;
   } 
 
   *retval = newp->p_pid;

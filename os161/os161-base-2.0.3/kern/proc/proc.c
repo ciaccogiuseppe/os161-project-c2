@@ -78,9 +78,10 @@ proc_search_pid(pid_t pid) {
   if (pid < PID_MIN || pid >= MAX_PROC)
 	return NULL;
 
-  KASSERT(pid>=0 && pid<MAX_PROC);
+  // KASSERT(pid>=0 && pid<MAX_PROC);
   p = processTable.proc[pid];
-  KASSERT(p->p_pid==pid);
+  if(p!=NULL)
+  	KASSERT(p->p_pid==pid);
 
   return p;
 }
