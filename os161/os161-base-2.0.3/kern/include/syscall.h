@@ -76,7 +76,7 @@ int sys_close(int fd, int *errp);
 int sys_write(int fd, userptr_t buf_ptr, size_t size, int *errp);
 int sys_read(int fd, userptr_t buf_ptr, size_t size, int *errp);
 void sys__exit(int status);
-int sys_waitpid(pid_t pid, userptr_t statusp, int options, int *errp);
+int sys_waitpid(pid_t pid, int* statusp, int options, int *errp);
 pid_t sys_getpid(void);
 int sys_fork(struct trapframe *ctf, pid_t *retval);
 off_t sys_lseek(int fd, off_t pos, int whence, int *errp);

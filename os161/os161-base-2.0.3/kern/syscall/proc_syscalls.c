@@ -29,7 +29,7 @@ sys__exit(int status)
 {
 #if OPT_SHELL
   struct proc *p = curproc;
-  p->p_status = status & 0xff; /* just lower 8 bits returned */
+  p->p_status = (status & 0xff) << 2; /* just lower 8 bits returned (2 bit shift: see include/kern/wait.h) */
   p->p_exited = 1;
   proc_remthread(curthread);
   proc_signal_end(p);
@@ -55,7 +55,7 @@ static int is_valid_pointer(userptr_t addr, struct addrspace *as){
   return 1;
 }
 
-int sys_waitpid(pid_t pid, userptr_t statusp, int options, int *errp) {
+int sys_waitpid(pid_t pid, int* statusp, int options, int *errp) {
   struct proc *p = proc_search_pid(pid);
   int s;
   
@@ -73,7 +73,7 @@ int sys_waitpid(pid_t pid, userptr_t statusp, int options, int *errp) {
   }
 
   // Check if the status argument was an invalid pointer  
-  if(statusp != NULL && !is_valid_pointer(statusp, curproc->p_addrspace)){
+  if(statusp != NULL && !is_valid_pointer((userptr_t)statusp, curproc->p_addrspace)){
     *errp = EFAULT;
     return -1;
   }
@@ -94,11 +94,10 @@ int sys_waitpid(pid_t pid, userptr_t statusp, int options, int *errp) {
     return pid;
   
   s = proc_wait(p);
-
   //The status_ptr pointer may also be NULL, in which case waitpid() ignores the child's return status
   if (statusp != NULL)
-    *(int*)statusp = s;
-  
+    //*(int*)statusp = s;
+    copyout(&s, (userptr_t)statusp, sizeof(int));
   return pid;
 }
 
