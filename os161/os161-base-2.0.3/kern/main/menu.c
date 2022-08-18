@@ -45,6 +45,7 @@
 #include <test.h>
 #include "opt-sfs.h"
 #include "opt-net.h"
+#include <syscall.h>
 
 /*
  * In-kernel menu and command dispatcher.
@@ -132,6 +133,16 @@ common_prog(int nargs, char **args)
 		proc_destroy(proc);
 		return result;
 	}
+
+	#if OPT_SHELL
+	int err = 0, status;
+	result = sys_waitpid(proc->p_pid, &status, 0, &err, 1);
+	if(result < 0){
+		kprintf("waitpid failed: %s\n", strerror(err));
+		proc_destroy(proc);
+		return err;
+	}
+	#endif
 
 	/*
 	 * The new process will be destroyed when the program exits...

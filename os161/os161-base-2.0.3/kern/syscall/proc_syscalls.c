@@ -21,6 +21,9 @@
 #include <kern/fcntl.h>
 #include <vfs.h>
 
+static char kargs[ARG_MAX];
+static unsigned char kargbuf[ARG_MAX];
+
 /*
  * system calls for process management
  */
@@ -55,7 +58,7 @@ static int is_valid_pointer(userptr_t addr, struct addrspace *as){
   return 1;
 }
 
-int sys_waitpid(pid_t pid, int* statusp, int options, int *errp) {
+int sys_waitpid(pid_t pid, int* statusp, int options, int *errp, bool is_kernel) {
   struct proc *p = proc_search_pid(pid);
   int s;
   
@@ -73,18 +76,18 @@ int sys_waitpid(pid_t pid, int* statusp, int options, int *errp) {
   }
 
   // Check if the status argument was an invalid pointer  
-  if(statusp != NULL && !is_valid_pointer((userptr_t)statusp, curproc->p_addrspace)){
+  if(!is_kernel && statusp != NULL && !is_valid_pointer((userptr_t)statusp, curproc->p_addrspace)){
     *errp = EFAULT;
     return -1;
   }
 
-  if((int)statusp%(sizeof(int))!=0){
+  if((int)statusp%(sizeof(int*))!=0){
     *errp = EFAULT;
     return -1;
   }
 
   // if the process that called the waitpid is not the parent
-  if (p->parent_proc != curproc) {
+  if (!is_kernel && p->parent_proc != curproc) {
     *errp = ECHILD;
     return -1;
   }
@@ -94,10 +97,16 @@ int sys_waitpid(pid_t pid, int* statusp, int options, int *errp) {
     return pid;
   
   s = proc_wait(p);
+
   //The status_ptr pointer may also be NULL, in which case waitpid() ignores the child's return status
-  if (statusp != NULL)
-    //*(int*)statusp = s;
-    copyout(&s, (userptr_t)statusp, sizeof(int));
+  if (statusp != NULL){
+    if(is_kernel){
+      *(int*)statusp = s;
+    } else {
+      copyout(&s, (userptr_t)statusp, sizeof(int));
+    }
+  }
+    
   return pid;
 }
 
@@ -169,7 +178,123 @@ int sys_fork(struct trapframe *ctf, pid_t *retval) {
   return 0;
 }
 
+static int
+align_arg(char arg[ARG_MAX], int align){
+  char *ptr = arg;
+  int len = 0, diff;
+
+  while(*ptr != '\0'){
+    *ptr+=1;
+    len++;
+  }
+
+  len++;
+  if(len % align == 0){
+    return len;
+  }
+
+  diff = align - (len % align);
+  while(diff){
+    *(++ptr) = '\0';
+    len++;
+    diff--;
+  }
+
+  return len;
+}
+
 static int 
+get_aligned_len(char arg[ARG_MAX], int align){
+  char *p = arg;
+  int len = 0;
+
+  while(*p != '\0'){
+    *p+=1;
+    len++;
+  }
+  len++;
+  if(len % align == 0)
+    return len;
+  
+  return len + (align - (len % align));
+}
+
+static int
+copy_args(userptr_t uargs, int *nargs, int *buflen){
+  int i = 0, err, n_last = 0;
+  char *ptr;
+  unsigned char *p_begin = NULL, *p_end = NULL;
+  uint32_t offset, last_offset;
+
+  *nargs = 0;
+  *buflen = 0;
+  while((err = copyin((userptr_t)uargs + i*4, &ptr, sizeof(ptr))) == 0){
+    if(ptr == NULL)
+      break;
+    err = copyinstr((userptr_t)ptr, kargs, sizeof(kargs), NULL);
+    if(err)
+      return err;
+    i++;
+    *nargs += 1;
+    *buflen += get_aligned_len(kargs, 4) + sizeof(char*);
+  }
+
+  if(i==0 && err)
+    return err;
+
+  *nargs += 1;
+  *buflen += sizeof(char*);
+
+  i = 0;
+  p_begin = kargbuf;
+  p_end = kargbuf + (*nargs * sizeof(char*));
+  n_last = 0;
+  last_offset = *nargs * sizeof(char*);
+  while((err = copyin((userptr_t)uargs + i*4, &ptr, sizeof(ptr))) == 0){
+    if(ptr == NULL)
+      break;
+    err = copyinstr((userptr_t)ptr, kargs, sizeof(kargs), NULL);
+    if(err)
+      return err;
+    offset = last_offset + n_last;
+    n_last = align_arg(kargs, 4);
+    *p_begin = offset & 0xff;
+    *(p_begin+1) = (offset >> 8) & 0xff;
+    *(p_begin+2) = (offset >> 16) & 0xff;
+    *(p_begin+3) = (offset >> 24) & 0xff;
+
+    memcpy(p_end, kargs, n_last);
+
+    p_end += n_last;
+    p_begin += 4;
+    last_offset = offset;
+    i++;
+  }
+
+  *p_begin = 0;
+  *(p_begin + 1) = 0;
+  *(p_begin + 2) = 0;
+  *(p_begin + 3) = 0;
+
+  return 0;
+}
+
+static int 
+adjust_kargbuf(int n_params, vaddr_t stack_ptr){
+  int i, index;
+  uint32_t new_offset = 0, old_offset = 0;
+
+  for(i = 0; i < n_params-1; i++){
+    index = i * sizeof(char*);
+    old_offset = ((0xff  & kargbuf[index+3])<< 24) | ((0xff  & kargbuf[index+2])<< 16) |
+      ((0xff  & kargbuf[index+1])<< 8) | (0xff  & kargbuf[index]);
+    new_offset = stack_ptr + old_offset;
+    memcpy(kargbuf + index, &new_offset, sizeof(int));
+  }
+  return 0;
+}
+
+/*static int 
 get_argc(char **args, struct addrspace *as, int *errp){
   int argc;
   for(argc = 0; args[argc]!=NULL; argc++){
@@ -179,9 +304,9 @@ get_argc(char **args, struct addrspace *as, int *errp){
     }
   }
   return argc;
-}
+}*/
 
-static int
+/*static int
 get_argv(int argc, char **args, vaddr_t *stackptr, vaddr_t *argvptr){
   int result;
   vaddr_t stackp = *stackptr, argvp;
@@ -208,16 +333,21 @@ get_argv(int argc, char **args, vaddr_t *stackptr, vaddr_t *argvptr){
   *stackptr = stackp;
   *argvptr = argvp;
   return 0;
-}
+}*/
 
 int
 sys_execv(userptr_t program, userptr_t args, int *errp)
 {
 	struct addrspace *new_as, *old_as;
 	struct vnode *v;
-	vaddr_t entrypoint, stackptr, argv_ptr;
-	int result, argc;
+	vaddr_t entrypoint, stackptr;
+  // vaddr_t argv_ptr;
+	int result, argc, buflen;
   char prg_path[PATH_MAX];
+
+  KASSERT(curthread != NULL);
+  KASSERT(curproc != NULL);
+
 
   if(!is_valid_pointer(program, curproc->p_addrspace)){
     *errp = EFAULT;
@@ -235,10 +365,12 @@ sys_execv(userptr_t program, userptr_t args, int *errp)
     return -1;
   }
 
+  /*
   argc = get_argc((char**) args, curproc->p_addrspace, errp);
   if(argc < 0){
     return -1;
   }
+  */
 
 	/* Open the file. */
 	result = vfs_open(prg_path, O_RDONLY, 0, &v);
@@ -247,6 +379,12 @@ sys_execv(userptr_t program, userptr_t args, int *errp)
 		return -1;
 	}
 
+  result = copy_args(args, &argc, &buflen);
+  if(result){
+    vfs_close(v);
+    *errp = result;
+    return -1;
+  }
 	/* We should be a new process. */
 	// KASSERT(proc_getas() == NULL);
 
@@ -262,29 +400,35 @@ sys_execv(userptr_t program, userptr_t args, int *errp)
 	old_as = proc_setas(new_as);
 	as_activate();
 
-  /* Define the user stack in the address space */
-	result = as_define_stack(new_as, &stackptr);
-	if (result) {
-    vfs_close(v);
-		/* p_addrspace will go away when curproc is destroyed */
-    *errp = result;
-		return -1;
-	}
-
+  /*
   result = get_argv(argc, (char**)args, &stackptr, &argv_ptr);
   if(result){
+    proc_setas(old_as);
+    as_activate();
+    as_destroy(new_as);
+    vfs_close(v);
     return result;
   }
+  */
 
 	if (std_open(STDIN_FILENO) != STDIN_FILENO){
+    proc_setas(old_as);
+    as_activate();
+    as_destroy(new_as);
     vfs_close(v);
 		return EIO;
 	}
 	if (std_open(STDOUT_FILENO) != STDOUT_FILENO){
+    proc_setas(old_as);
+    as_activate();
+    as_destroy(new_as);
     vfs_close(v);
 		return EIO;
 	}
 	if (std_open(STDERR_FILENO) != STDERR_FILENO){
+    proc_setas(old_as);
+    as_activate();
+    as_destroy(new_as);
     vfs_close(v);
 		return EIO;
 	}
@@ -292,18 +436,54 @@ sys_execv(userptr_t program, userptr_t args, int *errp)
 	/* Load the executable. */
 	result = load_elf(v, &entrypoint);
 	if (result) {
+    proc_setas(old_as);
+    as_activate();
+    as_destroy(new_as);
 		/* p_addrspace will go away when curproc is destroyed */
 		vfs_close(v);
     *errp = result;
 		return -1;
 	}
 
+  /* Define the user stack in the address space */
+	result = as_define_stack(new_as, &stackptr);
+	if (result) {
+    proc_setas(old_as);
+    as_activate();
+    as_destroy(new_as);
+    vfs_close(v);
+		/* p_addrspace will go away when curproc is destroyed */
+    *errp = result;
+		return -1;
+	}
+
+  stackptr -= buflen;
+  result = adjust_kargbuf(argc, stackptr);
+  if(result){
+    proc_setas(old_as);
+    as_activate();
+    as_destroy(new_as);
+    vfs_close(v);
+    *errp = result;
+		return -1;
+  }
+
+  result = copyout(kargbuf, (userptr_t)stackptr, buflen);
+  if(result){
+    proc_setas(old_as);
+    as_activate();
+    as_destroy(new_as);
+    vfs_close(v);
+    *errp = result;
+		return -1;
+  }
+
 	/* Done with the file now. */
 	vfs_close(v);
   as_destroy(old_as);
 
 	/* Warp to user mode. */
-	enter_new_process(argc /*argc*/, argc!=0?((userptr_t) argv_ptr):NULL /*userspace addr of argv*/,
+	enter_new_process(argc-1 /*argc*/, argc!=0?((userptr_t) stackptr):NULL /*userspace addr of argv*/,
 			    NULL /*userspace addr of environment*/,
 			    stackptr, entrypoint);
 
