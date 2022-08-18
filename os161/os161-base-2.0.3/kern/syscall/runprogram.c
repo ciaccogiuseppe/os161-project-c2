@@ -45,6 +45,37 @@
 #include <syscall.h>
 #include <test.h>
 #include <kern/unistd.h>
+#include <copyinout.h>
+
+/*
+static int
+get_argv(int argc, char **args, vaddr_t *stackptr, vaddr_t *argvptr){
+  int result;
+  vaddr_t stackp = *stackptr, argvp;
+
+  stackp -= (vaddr_t) (argc+1)*sizeof(char*);
+  argvp = stackp;
+
+  for(int i = 0; i < argc; i++){
+    size_t copied = 0;
+    size_t arg_len = strlen(args[i])+1;
+    stackp -= arg_len;
+
+    result = copyoutstr(args[i], (userptr_t) stackp, arg_len, &copied);
+    if(result){
+      return result;
+    }
+
+    result = copyout((void*)stackp, (userptr_t)argvp + i*sizeof(char*),sizeof(char*));
+    if(result){
+      return result;
+    }
+  }
+
+  *stackptr = stackp;
+  *argvptr = argvp;
+  return 0;
+}*/
 
 /*
  * Load program "progname" and start running it in usermode.
@@ -53,7 +84,11 @@
  * Calls vfs_open on progname and thus may destroy it.
  */
 int
+#if OPT_SHELL
+runprogram(char *progname, int argc, char **argv)
+#else
 runprogram(char *progname)
+#endif
 {
 	struct addrspace *as;
 	struct vnode *v;
@@ -108,10 +143,45 @@ runprogram(char *progname)
 		return result;
 	}
 
+	#if OPT_SHELL
+	vaddr_t argvptr;
+
+	/*
+	result = get_argv(argc, argv, &stackptr, &argvptr);
+	if(result){
+		return result;
+	}*/
+
+	stackptr -= (vaddr_t) ((argc+1)*sizeof(char*));
+	argvptr = stackptr;
+
+	for(int i = 0; i < argc; i++){
+		size_t copied = 0;
+		size_t arg_len = strlen(argv[i]) + 1;
+		stackptr -= arg_len;
+		result = copyoutstr(argv[i], (userptr_t) stackptr, arg_len, &copied);
+		if(result){
+			return result;
+		}
+		result = copyout(&stackptr, (userptr_t)argvptr + i*sizeof(char*), sizeof(char*));
+		if(result){
+			return result;
+		}
+	}
+
+	/* Warp to user mode. */
+	enter_new_process(argc, (userptr_t) argvptr,
+			  NULL /*userspace addr of environment*/,
+			  (vaddr_t) stackptr, entrypoint);
+
+	#else
+
 	/* Warp to user mode. */
 	enter_new_process(0 /*argc*/, NULL /*userspace addr of argv*/,
 			  NULL /*userspace addr of environment*/,
 			  stackptr, entrypoint);
+
+	#endif
 
 	/* enter_new_process does not return. */
 	panic("enter_new_process returned\n");
