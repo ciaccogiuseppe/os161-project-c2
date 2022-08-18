@@ -33,6 +33,7 @@
 #include <types.h>
 #include <cdefs.h> /* for __DEAD */
 #include "opt-shell.h"
+#include <kern/stat.h>
 
 struct trapframe; /* from <machine/trapframe.h> */
 
@@ -84,6 +85,7 @@ int sys_dup2(int oldfd, int newfd, int *errp);
 int sys_chdir(userptr_t path, int *errp);
 int sys___getcwd(userptr_t buf_ptr, size_t buflen, int *errp);
 int sys_execv(userptr_t program, userptr_t args, int *errp);
+int sys_fstat(int fd, struct stat *statbuf, int *errp);
 #endif
 
 #endif /* _SYSCALL_H_ */

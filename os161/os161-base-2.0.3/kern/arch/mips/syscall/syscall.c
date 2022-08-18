@@ -189,6 +189,10 @@ syscall(struct trapframe *tf)
 			retval = sys_execv((userptr_t)tf->tf_a0,
 				(userptr_t)tf->tf_a1, &err);
 			break;
+		case SYS_fstat:
+			retval = sys_fstat((int)tf->tf_a0,
+				(struct stat*)tf->tf_a1, &err);
+			break;
 
 #endif
 

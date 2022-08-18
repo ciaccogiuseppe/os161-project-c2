@@ -571,3 +571,34 @@ std_open(int fileno){
   return fd;
 
 }
+
+int
+sys_fstat(int fd, struct stat *statbuf, int *errp){
+  int result;
+  struct openfile *of;
+
+  if(fd < 0 || fd >= OPEN_MAX){
+    *errp = EBADF;
+    return -1;
+  }
+
+  if(!is_valid_pointer((userptr_t)statbuf, curproc->p_addrspace)){
+    *errp = EFAULT;
+    return -1;
+  }
+
+  of = curproc->fileTable[fd];
+
+  if(of==NULL){
+    *errp = EBADF;
+    return -1;
+  }
+
+  result = VOP_STAT(of->vn, statbuf);
+  if(result){
+    *errp = result;
+    return -1;
+  }
+
+  return 0;
+} 
