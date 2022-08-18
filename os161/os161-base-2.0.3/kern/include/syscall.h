@@ -86,6 +86,7 @@ int sys_chdir(userptr_t path, int *errp);
 int sys___getcwd(userptr_t buf_ptr, size_t buflen, int *errp);
 int sys_execv(userptr_t program, userptr_t args, int *errp);
 int sys_fstat(int fd, struct stat *statbuf, int *errp);
+int sys_getdirentry(int fd, char *buf, size_t buflen, int* errp);
 #endif
 
 #endif /* _SYSCALL_H_ */

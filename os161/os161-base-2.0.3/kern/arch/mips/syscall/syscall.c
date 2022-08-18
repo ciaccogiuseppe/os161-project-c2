@@ -193,6 +193,11 @@ syscall(struct trapframe *tf)
 			retval = sys_fstat((int)tf->tf_a0,
 				(struct stat*)tf->tf_a1, &err);
 			break;
+		case SYS_getdirentry:
+			retval = sys_getdirentry((int)tf->tf_a0,
+				(char*)tf->tf_a1,
+				(size_t)tf->tf_a2, &err);
+			break;
 
 #endif
 

@@ -602,3 +602,54 @@ sys_fstat(int fd, struct stat *statbuf, int *errp){
 
   return 0;
 } 
+
+int
+sys_getdirentry(int fd, char *buf, size_t buflen, int* errp)
+{
+    int result;
+    struct uio u;
+    struct openfile *of;
+    struct iovec iov;
+
+    if (fd < 0 || fd >= OPEN_MAX){
+      *errp = EBADF;
+      return -1;
+    } 
+    of = curproc->fileTable[fd];
+    if (of==NULL){
+      *errp = EBADF;
+      return -1;
+    }
+
+    if ((of->openflags & 3) == O_WRONLY){
+      *errp = EBADF;
+      return -1;
+    }
+
+    if(!is_valid_pointer((userptr_t)buf, curproc->p_addrspace)){
+      *errp = EFAULT;
+      return -1;
+    }
+
+    iov.iov_ubase = (userptr_t)buf;
+    iov.iov_len = buflen;
+
+    u.uio_iov = &iov;
+    u.uio_iovcnt = 1;
+    u.uio_resid = buflen;          // amount to read from the file
+    u.uio_offset = of->offset;
+    u.uio_segflg =UIO_USERISPACE;
+    u.uio_rw = UIO_READ;
+    u.uio_space = curproc->p_addrspace;
+
+    result = VOP_GETDIRENTRY(of->vn, &u);
+    if(result){
+      *errp = result;
+      return -1;
+    }
+
+    return 0;
+
+
+    
+}
