@@ -122,13 +122,14 @@ struct addrspace *proc_getas(void);
 /* Change the address space of the current process, and return the old one. */
 struct addrspace *proc_setas(struct addrspace *);
 
+#if OPT_SHELL
 /* wait for process termination, and return exit status */
 int proc_wait(struct proc *proc);
 /* get proc from pid */
 struct proc *proc_search_pid(pid_t pid);
 /* signal end/exit of process */
 void proc_signal_end(struct proc *proc);
-#if OPT_SHELL
+
 void proc_file_table_copy(struct proc *psrc, struct proc *pdest);
 #endif
 #endif /* _PROC_H_ */

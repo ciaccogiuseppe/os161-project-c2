@@ -9,7 +9,6 @@
 #include <types.h>
 #include <copyinout.h>
 #include <kern/fcntl.h>
-#if OPT_SHELL
 
 #define PATH_LEN 128
 // sys_chdir
@@ -66,5 +65,3 @@ sys___getcwd(userptr_t buf_ptr, size_t buflen, int *errp){
     }
     return buflen - buf.uio_resid;
 }
-
-#endif

@@ -38,9 +38,11 @@
 #include <syscall.h>
 #include <copyinout.h>
 
+#if OPT_SHELL
 #define MAKE_64BITS(x,y) (((int64_t)x) << 32 | y)
 #define GET_LO(x) ((int32_t) x & 0x00000000FFFFFFFF)
 #define GET_HI(x) ((int32_t) x & 0xFFFFFFFF00000000)
+#endif
 
 /*
  * System call dispatcher.
@@ -85,10 +87,12 @@ syscall(struct trapframe *tf)
 {
 	int callno;
 	int32_t retval;
-	int64_t retval64;
 	int err = 0;
+#if OPT_SHELL
+	int64_t retval64;
 	int extra_param;
 	bool ret64 = false;
+#endif
 
 	KASSERT(curthread != NULL);
 	KASSERT(curthread->t_curspl == 0);
@@ -119,6 +123,7 @@ syscall(struct trapframe *tf)
 
 	    /* Add stuff here */
 #if OPT_SHELL
+
 	    case SYS_open:
 	        retval = sys_open((userptr_t)tf->tf_a0,
 				  (int)tf->tf_a1,
@@ -172,6 +177,7 @@ syscall(struct trapframe *tf)
 		case SYS_chdir:
 			retval = sys_chdir((userptr_t)tf->tf_a0, &err);
 			break;
+
 		case SYS_lseek:
 			err = copyin((userptr_t)(tf->tf_sp + 16), &extra_param, sizeof(int));
 			if(err)
@@ -181,18 +187,22 @@ syscall(struct trapframe *tf)
 				(int)extra_param, &err);
 			ret64 = true;
 			break;
+
 		case SYS_dup2:
 			retval = sys_dup2((int)tf->tf_a0,
 				(int)tf->tf_a1, &err);
 			break;
+
 		case SYS_execv:
 			retval = sys_execv((userptr_t)tf->tf_a0,
 				(userptr_t)tf->tf_a1, &err);
 			break;
+
 		case SYS_fstat:
 			retval = sys_fstat((int)tf->tf_a0,
 				(struct stat*)tf->tf_a1, &err);
 			break;
+
 		case SYS_getdirentry:
 			retval = sys_getdirentry((int)tf->tf_a0,
 				(char*)tf->tf_a1,
@@ -219,6 +229,7 @@ syscall(struct trapframe *tf)
 	}
 	else {
 		/* Success. */
+		#if OPT_SHELL
 		if(ret64){
 			tf->tf_v0 = GET_HI(retval64);
 			tf->tf_v1 = GET_LO(retval64);
@@ -227,6 +238,10 @@ syscall(struct trapframe *tf)
 			tf->tf_v0 = retval;
 			tf->tf_a3 = 0;      /* signal no error */
 		}
+		#else
+		tf->tf_v0 = retval;
+		tf->tf_a3 = 0;      /* signal no error */
+		#endif
 	}
 
 	/*

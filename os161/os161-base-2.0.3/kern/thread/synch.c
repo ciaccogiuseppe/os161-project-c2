@@ -154,7 +154,6 @@ lock_create(const char *name)
                 return NULL;
         }
 
-		// HANGMAN_LOCKABLEINIT(&lock->lk_hangman, lock->lk_name);
 
         // add stuff here as needed
 
@@ -172,6 +171,8 @@ lock_create(const char *name)
 	}
 	lock->lk_owner = NULL;
 	spinlock_init(&lock->lk_lock);
+#else
+	HANGMAN_LOCKABLEINIT(&lock->lk_hangman, lock->lk_name);
 #endif	
         return lock;
 }

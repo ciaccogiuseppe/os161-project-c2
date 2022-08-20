@@ -115,6 +115,8 @@ runprogram(char *progname)
 	proc_setas(as);
 	as_activate();
 
+	#if OPT_SHELL
+
 	if (std_open(STDIN_FILENO) != STDIN_FILENO){
 		return EIO;
 	}
@@ -124,6 +126,8 @@ runprogram(char *progname)
 	if (std_open(STDERR_FILENO) != STDERR_FILENO){
 		return EIO;
 	}
+
+	#endif
 
 	/* Load the executable. */
 	result = load_elf(v, &entrypoint);
