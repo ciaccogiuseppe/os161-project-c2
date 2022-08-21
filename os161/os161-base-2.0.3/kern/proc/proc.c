@@ -53,6 +53,7 @@
 
 #include <synch.h>
 
+#if OPT_SHELL
 #define MAX_PROC 100
 static struct _processTable {
   int active;           /* initial value 0 */
@@ -60,12 +61,14 @@ static struct _processTable {
   int last_i;           /* index of last allocated pid */
   struct spinlock lk;	/* Lock for this table */
 } processTable;
+#endif
 
 /*
  * The process for the kernel; this holds all the kernel-only threads.
  */
 struct proc *kproc;
 
+#if OPT_SHELL
 /*
  * G.Cabodi - 2019
  * Initialize support for pid/waitpid.
@@ -93,7 +96,6 @@ proc_search_pid(pid_t pid) {
  */
 static void
 proc_init_waitpid(struct proc *proc, const char *name) {
-#if OPT_SHELL
   /* search a free index in table using a circular strategy */
   int i;
   spinlock_acquire(&processTable.lk);
@@ -121,10 +123,6 @@ proc_init_waitpid(struct proc *proc, const char *name) {
   proc->p_cv = cv_create(name);
   proc->p_cv_lock = lock_create(name);
 #endif
-#else
-  (void)proc;
-  (void)name;
-#endif
 }
 
 /*
@@ -133,7 +131,6 @@ proc_init_waitpid(struct proc *proc, const char *name) {
  */
 static void
 proc_end_waitpid(struct proc *proc) {
-#if OPT_SHELL
   /* remove the process from the table */
   int i;
   spinlock_acquire(&processTable.lk);
@@ -148,11 +145,8 @@ proc_end_waitpid(struct proc *proc) {
   cv_destroy(proc->p_cv);
   lock_destroy(proc->p_cv_lock);
 #endif
-#else
-  (void)proc;
-#endif
 }
-
+#endif
 /*
  * Create a proc structure.
  */
@@ -178,17 +172,18 @@ proc_create(const char *name)
 	/* VM fields */
 	proc->p_addrspace = NULL;
 	
+	/* VFS fields */
+	proc->p_cwd = NULL;
+
+#if OPT_SHELL
 	// New fields
 	proc->p_exited = 0;
 	proc->parent_proc = NULL;
 
-	/* VFS fields */
-	proc->p_cwd = NULL;
-
 	proc_init_waitpid(proc,name);
-#if OPT_SHELL
-        bzero(proc->fileTable,OPEN_MAX*sizeof(struct openfile *));	
+    bzero(proc->fileTable,OPEN_MAX*sizeof(struct openfile *));	
 #endif
+
 	return proc;
 }
 
@@ -275,7 +270,9 @@ proc_destroy(struct proc *proc)
 	KASSERT(proc->p_numthreads == 0);
 	spinlock_cleanup(&proc->p_lock);
 
+	#if OPT_SHELL
 	proc_end_waitpid(proc);
+	#endif
 
 	kfree(proc->p_name);
 	kfree(proc);
@@ -433,37 +430,30 @@ proc_setas(struct addrspace *newas)
 	return oldas;
 }
 
-
-
-        /* G.Cabodi - 2019 - support for waitpid */
+#if OPT_SHELL
+    /* G.Cabodi - 2019 - support for waitpid */
 int 
 proc_wait(struct proc *proc)
 {
-#if OPT_SHELL
-        int return_status;
-        /* NULL and kernel proc forbidden */
-		KASSERT(proc != NULL);
-		KASSERT(proc != kproc);
+    int return_status;
+    /* NULL and kernel proc forbidden */
+	KASSERT(proc != NULL);
+	KASSERT(proc != kproc);
 
-        /* wait on semaphore or condition variable */ 
+    /* wait on semaphore or condition variable */ 
 #if USE_SEMAPHORE_FOR_WAITPID
-        P(proc->p_sem);
+    P(proc->p_sem);
 #else
-        lock_acquire(proc->p_cv_lock);
-        cv_wait(proc->p_cv);
-        lock_release(proc->p_cv_lock);
+    lock_acquire(proc->p_cv_lock);
+    cv_wait(proc->p_cv);
+    lock_release(proc->p_cv_lock);
 #endif
-        return_status = proc->p_status;
-        proc_destroy(proc);
-        return return_status;
-#else
-        /* this doesn't synchronize */ 
-        (void)proc;
-        return 0;
-#endif
+    return_status = proc->p_status;
+    proc_destroy(proc);
+    return return_status;
 }
 
-#if OPT_SHELL
+
 /* G.Cabodi - 2019 - support for waitpid */
 void
 proc_signal_end(struct proc *proc)

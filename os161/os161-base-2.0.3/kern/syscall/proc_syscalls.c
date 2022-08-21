@@ -30,17 +30,11 @@ static unsigned char kargbuf[ARG_MAX];
 void
 sys__exit(int status)
 {
-#if OPT_SHELL
   struct proc *p = curproc;
   p->p_status = (status & 0xff) << 2; /* just lower 8 bits returned (2 bit shift: see include/kern/wait.h) */
   p->p_exited = 1;
   proc_remthread(curthread);
   proc_signal_end(p);
-#else
-  /* get address space of current process and destroy */
-  struct addrspace *as = proc_getas();
-  as_destroy(as);
-#endif
   thread_exit();
 
   panic("thread_exit returned (should not happen)\n");
@@ -111,12 +105,8 @@ int sys_waitpid(pid_t pid, int* statusp, int options, int *errp, bool is_kernel)
 }
 
 pid_t sys_getpid(void) {
-#if OPT_SHELL
   KASSERT(curproc != NULL);
   return curproc->p_pid;
-#else
-  return -1;
-#endif
 }
 
 static void
