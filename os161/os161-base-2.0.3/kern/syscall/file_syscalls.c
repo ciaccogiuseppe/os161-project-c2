@@ -648,7 +648,9 @@ sys_getdirentry(int fd, char *buf, size_t buflen, int* errp)
       return -1;
     }
 
-    return 0;
+    //return 0;
+    of->offset = u.uio_offset;
+    return (buflen - u.uio_resid);
 
 
     
