@@ -53,6 +53,7 @@
 #include <platform/bus.h>
 #include <vfs.h>
 #include <emufs.h>
+#include <limits.h>
 #include "autoconf.h"
 
 /* Register offsets */
@@ -823,7 +824,7 @@ emufs_lookparent(struct vnode *dir, char *pathname, struct vnode **ret,
 
 static
 int
-str_merge(char* dest, char* str1, char* str2){
+path_merge(char* dest, char* str1, char* str2){
 	int i = 0;
 	int j = 0;
 	while(str1[i] != '\0'){
@@ -842,23 +843,12 @@ str_merge(char* dest, char* str1, char* str2){
 
 static
 void
-str_append_start(char* str1, char* str2){
-	int count1 = 0;
-	int count2 = 0;
+path_append_start(char* str1, char* str2){
+	int count1 = strlen(str1);
+	int count2 = strlen(str2);
 	char* tmpstr;
 	int i = 0;
 	int j;
-
-	while(str2[i] != '\0'){
-		count2 ++;
-		i++;
-	}
-
-	i = 0;
-	while(str1[i] != '\0'){
-		count1 ++;
-		i++;
-	}
 
 	tmpstr = kmalloc((count1+count2+2)*sizeof(char));
 	tmpstr[0] = '/';
@@ -868,10 +858,8 @@ str_append_start(char* str1, char* str2){
 	}
 	i++;
 	if(count1 != 0){
-		//tmpstr[i++] = '/';
 		j = 0;
 		while(i<count1+count2+2){
-			
 			tmpstr[i] = str1[j++];
 			i++;
 		}
@@ -881,7 +869,6 @@ str_append_start(char* str1, char* str2){
 	}
 	str1[i] = 0;
 	kfree(tmpstr);
-	//return j;
 }
 
 /*
@@ -905,26 +892,28 @@ emufs_namefile(struct vnode *v, struct uio *uio)
 	struct vnode* vn;
 	struct vnode* v_to_find = v;
 	char* base;
-	char parent[1024] = "..";
-	char* respath = kmalloc(1024*sizeof(char));
-	for(int i = 0; i < 1024; i++){
+	char parent[3] = "..";
+	char* respath = kmalloc(PATH_MAX*sizeof(char));
+	char* buffer = kmalloc(PATH_MAX*sizeof(char));
+	char* path = kmalloc(PATH_MAX*sizeof(char));
+	for(int i = 0; i < PATH_MAX; i++){
 		respath[i] = 0;
 	}
-	//int base;
+	
 	while(vn == NULL || vn->vn_data != ef->ef_root){
-		char* path = kmalloc(1024*sizeof(char));
+		
 		struct vnode* vn2 = NULL;
 		emufs_lookup(v_to_find, parent, &vn);
 		
 		struct uio buf;
 		struct iovec vec;
-		char *buffer = kmalloc(64*sizeof(char));
+		
 		vec.iov_kbase = buffer;
-		vec.iov_len = 64;
+		vec.iov_len = PATH_MAX;
 		buf.uio_segflg = UIO_SYSSPACE;
 		buf.uio_iov = &vec;
 		buf.uio_iovcnt = 1;
-    	buf.uio_resid = 64; 
+    	buf.uio_resid = PATH_MAX; 
 		buf.uio_offset = 0;
 		buf.uio_space = NULL;
 		buf.uio_rw = UIO_READ;
@@ -932,23 +921,31 @@ emufs_namefile(struct vnode *v, struct uio *uio)
 		base = (char*)buf.uio_iov->iov_kbase;
 
 		while(vn2 != v_to_find){
-			for(int i=0; i<64; i++){
+			if(vn2 != NULL){
+				VOP_DECREF(vn2);
+			}
+			for(int i=0; i<PATH_MAX; i++){
 				buffer[i]=0;
 			}
-			//buf.uio_resid=0;
-			buf.uio_iov->iov_len = 64;
-			//buf.uio_iov->iov_kbase = base;
-			buf.uio_resid = 64;
+			buf.uio_iov->iov_len = PATH_MAX;
+			buf.uio_resid = PATH_MAX;
 			emufs_getdirentry(vn, &buf);
-			//buffer[1024-buf.uio_iov->iov_len] = '\0';
-			str_merge(path, parent, buffer);
+			path_merge(path, parent, buffer);
 			emufs_lookup(v_to_find, path, &vn2);
 			buf.uio_iov->iov_kbase = base;
 		}
-		str_append_start(respath, buffer);
-		kfree(buffer);
+		
+		path_append_start(respath, buffer);
+		
+		VOP_DECREF(v_to_find);
+		if(v_to_find != v->vn_data){
+			VOP_DECREF(v_to_find);
+		}
 		v_to_find = vn;
+
 	}
+	kfree(buffer);
+	kfree(path);
 
 	int i = 0;
 	while(respath[i] != 0){

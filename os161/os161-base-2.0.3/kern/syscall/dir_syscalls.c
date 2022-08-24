@@ -10,11 +10,11 @@
 #include <copyinout.h>
 #include <kern/fcntl.h>
 
-#define PATH_LEN 128
+//#define PATH_LEN 128
 // sys_chdir
 int 
 sys_chdir(userptr_t path, int *errp){
-    char kern_buf[PATH_LEN];
+    char kern_buf[PATH_MAX];
     int err;
     struct vnode *dir;
 
