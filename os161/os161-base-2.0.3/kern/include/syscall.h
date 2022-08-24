@@ -34,6 +34,7 @@
 #include <cdefs.h> /* for __DEAD */
 #include "opt-shell.h"
 #include <kern/stat.h>
+#include <synch.h>
 
 struct trapframe; /* from <machine/trapframe.h> */
 
@@ -69,7 +70,9 @@ struct openfile {
   off_t offset;	
   unsigned int countRef;
   int openflags;
+  struct lock *of_lock;
 };
+void sft_init(void);
 void openfileIncrRefCount(struct openfile *of);
 int std_open(int fileno);
 int sys_open(userptr_t path, int openflags, mode_t mode, int *errp);

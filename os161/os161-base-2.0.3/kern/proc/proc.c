@@ -56,11 +56,13 @@
 #if OPT_SHELL
 #define MAX_PROC 100
 static struct _processTable {
-  int active;           /* initial value 0 */
+  // int active;           /* initial value 0 */
   struct proc *proc[MAX_PROC+1]; /* [0] not used. pids are >= 1 */
   int last_i;           /* index of last allocated pid */
   struct spinlock lk;	/* Lock for this table */
 } processTable;
+
+struct lock *ft_copy_lock;
 #endif
 
 /*
@@ -83,7 +85,10 @@ proc_search_pid(pid_t pid) {
 	return NULL;
 
   // KASSERT(pid>=0 && pid<MAX_PROC);
+
+  spinlock_acquire(&processTable.lk);
   p = processTable.proc[pid];
+  spinlock_release(&processTable.lk);
   if(p!=NULL)
   	KASSERT(p->p_pid==pid);
 
@@ -179,6 +184,7 @@ proc_create(const char *name)
 	// New fields
 	proc->p_exited = 0;
 	proc->parent_proc = NULL;
+	proc->ft_lock = lock_create(proc->p_name);
 
 	proc_init_waitpid(proc,name);
     bzero(proc->fileTable,OPEN_MAX*sizeof(struct openfile *));	
@@ -272,6 +278,7 @@ proc_destroy(struct proc *proc)
 
 	#if OPT_SHELL
 	proc_end_waitpid(proc);
+	lock_destroy(proc->ft_lock);
 	#endif
 
 	kfree(proc->p_name);
@@ -291,7 +298,9 @@ proc_bootstrap(void)
 #if OPT_SHELL
 	spinlock_init(&processTable.lk);
 	/* kernel process is not registered in the table */
-	processTable.active = 1;
+	// processTable.active = 1;
+	sft_init();
+	ft_copy_lock = lock_create("File Table Copy");
 #endif
 }
 
@@ -470,6 +479,9 @@ proc_signal_end(struct proc *proc)
 void 
 proc_file_table_copy(struct proc *psrc, struct proc *pdest) {
   int fd;
+  lock_acquire(ft_copy_lock);
+  lock_acquire(psrc->ft_lock);
+  lock_acquire(pdest->ft_lock);
   for (fd=0; fd<OPEN_MAX; fd++) {
     struct openfile *of = psrc->fileTable[fd];
     pdest->fileTable[fd] = of;
@@ -478,6 +490,9 @@ proc_file_table_copy(struct proc *psrc, struct proc *pdest) {
       openfileIncrRefCount(of);
     }
   }
+  lock_release(pdest->ft_lock);
+  lock_release(psrc->ft_lock);
+  lock_release(ft_copy_lock);
 }
 
 #endif

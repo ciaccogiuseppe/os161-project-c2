@@ -21,7 +21,7 @@
 #include <kern/fcntl.h>
 #include <vfs.h>
 
-static char kargs[ARG_MAX];
+static char karg[ARG_MAX];
 static unsigned char kargbuf[ARG_MAX];
 
 /*
@@ -31,8 +31,10 @@ void
 sys__exit(int status)
 {
   struct proc *p = curproc;
+  spinlock_acquire(&p->p_lock);
   p->p_status = (status & 0xff) << 2; /* just lower 8 bits returned (2 bit shift: see include/kern/wait.h) */
   p->p_exited = 1;
+  spinlock_release(&p->p_lock);
   proc_remthread(curthread);
   proc_signal_end(p);
   thread_exit();
@@ -70,7 +72,7 @@ int sys_waitpid(pid_t pid, int* statusp, int options, int *errp, bool is_kernel)
   }
 
   // Check if the status argument was an invalid pointer  
-  if(!is_kernel && statusp != NULL && !is_valid_pointer((userptr_t)statusp, curproc->p_addrspace)){
+  if(!is_kernel && statusp != NULL && !is_valid_pointer((userptr_t)statusp, proc_getas())){
     *errp = EFAULT;
     return -1;
   }
@@ -80,16 +82,21 @@ int sys_waitpid(pid_t pid, int* statusp, int options, int *errp, bool is_kernel)
     return -1;
   }
 
+  spinlock_acquire(&p->p_lock);
   // if the process that called the waitpid is not the parent
   if (!is_kernel && p->parent_proc != curproc) {
+    spinlock_release(&p->p_lock);
     *errp = ECHILD;
     return -1;
   }
 
   // Process has already exited
-  if (p->p_exited == 1)
+  if (p->p_exited == 1){
+    spinlock_release(&p->p_lock);
     return pid;
+  }
   
+  spinlock_release(&p->p_lock); 
   s = proc_wait(p);
 
   //The status_ptr pointer may also be NULL, in which case waitpid() ignores the child's return status
@@ -122,17 +129,21 @@ int sys_fork(struct trapframe *ctf, pid_t *retval) {
   struct trapframe *tf_child;
   struct proc *newp;
   int result;
+  char *name;
 
   KASSERT(curproc != NULL);
 
-  newp = proc_create_runprogram(curproc->p_name);
+  spinlock_acquire(&curproc->p_lock);
+  name = curproc->p_name;
+  spinlock_release(&curproc->p_lock);
+  newp = proc_create_runprogram(name);
   if (newp == NULL) {
     return ENOMEM;
   }
 
   /* done here as we need to duplicate the address space 
      of thbe current process */
-  as_copy(curproc->p_addrspace, &(newp->p_addrspace));
+  as_copy(proc_getas(), &(newp->p_addrspace));
   if(newp->p_addrspace == NULL){
     proc_destroy(newp); 
     return ENOMEM; 
@@ -174,7 +185,7 @@ align_arg(char arg[ARG_MAX], int align){
   int len = 0, diff;
 
   while(*ptr != '\0'){
-    *ptr+=1;
+    ptr+=1;
     len++;
   }
 
@@ -199,7 +210,7 @@ get_aligned_len(char arg[ARG_MAX], int align){
   int len = 0;
 
   while(*p != '\0'){
-    *p+=1;
+    p+=1;
     len++;
   }
   len++;
@@ -221,12 +232,12 @@ copy_args(userptr_t uargs, int *nargs, int *buflen){
   while((err = copyin((userptr_t)uargs + i*4, &ptr, sizeof(ptr))) == 0){
     if(ptr == NULL)
       break;
-    err = copyinstr((userptr_t)ptr, kargs, sizeof(kargs), NULL);
+    err = copyinstr((userptr_t)ptr, karg, sizeof(karg), NULL);
     if(err)
       return err;
     i++;
     *nargs += 1;
-    *buflen += get_aligned_len(kargs, 4) + sizeof(char*);
+    *buflen += get_aligned_len(karg, 4) + sizeof(char*);
   }
 
   if(i==0 && err)
@@ -243,17 +254,17 @@ copy_args(userptr_t uargs, int *nargs, int *buflen){
   while((err = copyin((userptr_t)uargs + i*4, &ptr, sizeof(ptr))) == 0){
     if(ptr == NULL)
       break;
-    err = copyinstr((userptr_t)ptr, kargs, sizeof(kargs), NULL);
+    err = copyinstr((userptr_t)ptr, karg, sizeof(karg), NULL);
     if(err)
       return err;
     offset = last_offset + n_last;
-    n_last = align_arg(kargs, 4);
+    n_last = align_arg(karg, 4);
     *p_begin = offset & 0xff;
     *(p_begin+1) = (offset >> 8) & 0xff;
     *(p_begin+2) = (offset >> 16) & 0xff;
     *(p_begin+3) = (offset >> 24) & 0xff;
 
-    memcpy(p_end, kargs, n_last);
+    memcpy(p_end, karg, n_last);
 
     p_end += n_last;
     p_begin += 4;
@@ -339,12 +350,12 @@ sys_execv(userptr_t program, userptr_t args, int *errp)
   KASSERT(curproc != NULL);
 
 
-  if(!is_valid_pointer(program, curproc->p_addrspace)){
+  if(!is_valid_pointer(program, proc_getas())){
     *errp = EFAULT;
     return -1;
   }
 
-  if((args == NULL) || (!is_valid_pointer(args, curproc->p_addrspace))){
+  if((args == NULL) || (!is_valid_pointer(args, proc_getas()))){
     *errp = EFAULT;
     return -1;
   }
@@ -356,7 +367,7 @@ sys_execv(userptr_t program, userptr_t args, int *errp)
   }
 
   /*
-  argc = get_argc((char**) args, curproc->p_addrspace, errp);
+  argc = get_argc((char**) args, proc_getas(), errp);
   if(argc < 0){
     return -1;
   }

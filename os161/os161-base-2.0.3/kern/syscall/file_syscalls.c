@@ -30,12 +30,20 @@
 #define USE_KERNEL_BUFFER 0
 
 
-
-struct openfile systemFileTable[SYSTEM_OPEN_MAX];
+static struct _systemFileTable{
+  struct openfile ft[SYSTEM_OPEN_MAX];
+  struct lock *lk;
+  // int active;
+} systemFileTable;
 
 void openfileIncrRefCount(struct openfile *of) {
   if (of!=NULL)
     of->countRef++;
+}
+
+void sft_init(void){
+  systemFileTable.lk = lock_create("System File Table");
+  // systemFileTable.active = 1;
 }
 
 static int
@@ -65,22 +73,28 @@ file_read(int fd, userptr_t buf_ptr, size_t size, int *errp) {
     *errp = EBADF;
     return -1;
   }
+  lock_acquire(curproc->ft_lock);
   of = curproc->fileTable[fd];
+  lock_release(curproc->ft_lock);
   if (of==NULL) {
     *errp = EBADF;
     return -1;
   }
+  lock_acquire(of->of_lock);
   if ((of->openflags & 3) == O_WRONLY){
+    lock_release(of->of_lock);
     *errp = EBADF;
     return -1;
   }
   vn = of->vn;
   if (vn==NULL) {
+    lock_release(of->of_lock);
     *errp = EBADF;
     return -1;
   }
 
-  if(!is_valid_pointer(buf_ptr, curproc->p_addrspace)){
+  if(!is_valid_pointer(buf_ptr, proc_getas())){
+    lock_release(of->of_lock);
     *errp = EFAULT;
     return -1;
   }
@@ -89,6 +103,7 @@ file_read(int fd, userptr_t buf_ptr, size_t size, int *errp) {
   uio_kinit(&iov, &ku, kbuf, size, of->offset, UIO_READ);
   result = VOP_READ(vn, &ku);
   if (result) {
+    lock_release(of->of_lock);
     *errp = result;
     return -1;
   }
@@ -96,6 +111,7 @@ file_read(int fd, userptr_t buf_ptr, size_t size, int *errp) {
   nread = size - ku.uio_resid;
   copyout(kbuf,buf_ptr,nread);
   kfree(kbuf);
+  lock_release(of->of_lock);
   return (nread);
 }
 
@@ -112,22 +128,28 @@ file_write(int fd, userptr_t buf_ptr, size_t size, int *errp) {
     *errp = EBADF;
     return -1;
   }
+  lock_acquire(curproc->ft_lock);
   of = curproc->fileTable[fd];
+  lock_release(curproc->ft_lock);
   if (of==NULL) {
     *errp = EBADF;
     return -1;
   }
+  lock_acquire(of->of_lock);
   if ((of->openflags & 3) == O_RDONLY){
+    lock_release(of->of_lock);
     *errp = EBADF;
     return -1;
   }
   vn = of->vn;
   if (vn==NULL) {
+    lock_release(of->of_lock);
     *errp = EBADF;
     return -1;
   }
 
-  if(!is_valid_pointer(buf_ptr, curproc->p_addrspace)){
+  if(!is_valid_pointer(buf_ptr, proc_getas())){
+    lock_release(of->of_lock);
     *errp = EFAULT;
     return -1;
   }
@@ -137,12 +159,14 @@ file_write(int fd, userptr_t buf_ptr, size_t size, int *errp) {
   uio_kinit(&iov, &ku, kbuf, size, of->offset, UIO_WRITE);
   result = VOP_WRITE(vn, &ku);
   if (result) {
+    lock_release(of->of_lock);
     *errp = result;
     return -1;
   }
   kfree(kbuf);
   of->offset = ku.uio_offset;
   nwrite = size - ku.uio_resid;
+  lock_release(of->of_lock);
   return (nwrite);
 }
 
@@ -160,22 +184,28 @@ file_read(int fd, userptr_t buf_ptr, size_t size, int *errp) {
     *errp = EBADF;
     return -1;
   } 
+  lock_acquire(curproc->ft_lock); 
   of = curproc->fileTable[fd];
+  lock_release(curproc->ft_lock);
   if (of==NULL){
     *errp = EBADF;
     return -1;
   }
+  lock_acquire(of->of_lock);
   if ((of->openflags & 3) == O_WRONLY){
+    lock_release(of->of_lock);
     *errp = EBADF;
     return -1;
   }
   vn = of->vn;
   if (vn==NULL){
+    lock_release(of->of_lock);
     *errp = EBADF;
     return -1;
   }
 
-  if(!is_valid_pointer(buf_ptr, curproc->p_addrspace)){
+  if(!is_valid_pointer(buf_ptr, proc_getas())){
+    lock_release(of->of_lock);
     *errp = EFAULT;
     return -1;
   }
@@ -189,15 +219,17 @@ file_read(int fd, userptr_t buf_ptr, size_t size, int *errp) {
   u.uio_offset = of->offset;
   u.uio_segflg =UIO_USERISPACE;
   u.uio_rw = UIO_READ;
-  u.uio_space = curproc->p_addrspace;
+  u.uio_space = proc_getas();
 
   result = VOP_READ(vn, &u);
   if (result) {
+    lock_release(of->of_lock);
     *errp = result;
     return -1;
   }
 
   of->offset = u.uio_offset;
+  lock_release(of->of_lock);
   return (size - u.uio_resid);
 }
 
@@ -213,23 +245,29 @@ file_write(int fd, userptr_t buf_ptr, size_t size, int *errp) {
     *errp = EBADF;
     return -1;
   }
+  lock_acquire(curproc->ft_lock); 
   of = curproc->fileTable[fd];
+  lock_release(curproc->ft_lock);
   
   if (of==NULL){
     *errp = EBADF;
     return -1;
   }
+  lock_acquire(of->of_lock);
   if ((of->openflags & 3)== O_RDONLY){
+    lock_release(of->of_lock);
     *errp = EBADF;
     return -1;
   }
   vn = of->vn;
   if (vn==NULL){
+    lock_release(of->of_lock);
     *errp = EBADF;
     return -1;
   }
 
-  if(!is_valid_pointer(buf_ptr, curproc->p_addrspace)){
+  if(!is_valid_pointer(buf_ptr, proc_getas())){
+    lock_release(of->of_lock);
     *errp = EFAULT;
     return -1;
   }
@@ -244,15 +282,17 @@ file_write(int fd, userptr_t buf_ptr, size_t size, int *errp) {
   u.uio_offset = of->offset;
   u.uio_segflg =UIO_USERISPACE;
   u.uio_rw = UIO_WRITE;
-  u.uio_space = curproc->p_addrspace;
+  u.uio_space = proc_getas();
 
   result = VOP_WRITE(vn, &u);
   if (result) {
+    lock_release(of->of_lock);
     *errp = result;
     return -1;
   }
   of->offset = u.uio_offset;
   nwrite = size - u.uio_resid;
+  lock_release(of->of_lock);
   return (nwrite);
 }
 
@@ -275,7 +315,7 @@ sys_open(userptr_t path, int openflags, mode_t mode, int *errp)
     return -1;
   }
 
-  if(!is_valid_pointer(path, curproc->p_addrspace)){
+  if(!is_valid_pointer(path, proc_getas())){
     *errp = EFAULT;
     return -1;
   }
@@ -292,27 +332,33 @@ sys_open(userptr_t path, int openflags, mode_t mode, int *errp)
     return -1;
   }
   /* search system open file table */
+  lock_acquire(systemFileTable.lk);
   for (i=0; i<SYSTEM_OPEN_MAX; i++) {
-    if (systemFileTable[i].vn==NULL) {
-      of = &systemFileTable[i];
+    if ((systemFileTable.ft)[i].vn==NULL) {
+      of = &(systemFileTable.ft)[i];
       of->vn = v;
       of->offset = 0; // TODO: handle offset with append
       of->countRef = 1;
       of->openflags = openflags;
+      of->of_lock = lock_create("of");
       break;
     }
   }
+  lock_release(systemFileTable.lk);
   if (of==NULL) { 
     // no free slot in system open file table
     *errp = ENFILE;
   }
   else {
+    lock_acquire(curproc->ft_lock);
     for (fd=STDERR_FILENO+1; fd<OPEN_MAX; fd++) {
       if (curproc->fileTable[fd] == NULL) {
 	      curproc->fileTable[fd] = of;
+        lock_release(curproc->ft_lock);
 	      return fd;
       }
     }
+    lock_release(curproc->ft_lock);
     // no free slot in process open file table
     *errp = EMFILE;
   }
@@ -336,25 +382,33 @@ int sys_close(int fd, int *errp) {
   }
 
   KASSERT(curproc!=NULL);
+  lock_acquire(curproc->ft_lock);
   of = curproc->fileTable[fd];
   if (of == NULL) {
+    lock_release(curproc->ft_lock);
     *errp = EBADF;
     return -1;
   }
 
   curproc->fileTable[fd] = NULL;
 
-  if (--of->countRef > 0)
+  lock_release(curproc->ft_lock);
+  lock_acquire(of->of_lock);
+  if (--of->countRef > 0){
+    lock_release(of->of_lock);
     return 0; // just decrement ref cnt
+  }
   
   vn = of->vn;
   of->vn = NULL;
+  lock_release(of->of_lock);
   if (vn == NULL) {
     *errp = EIO;
     return -1;
   }
 
-  vfs_close(vn);	
+  vfs_close(vn); 
+  lock_destroy(of->of_lock);	
   return 0;
 }
 
@@ -429,15 +483,19 @@ sys_lseek(int fd, off_t pos, int whence, int *errp){
     return -1;
   }
 
+  lock_acquire(curproc->ft_lock);
   of = curproc->fileTable[fd];
+  lock_release(curproc->ft_lock);
 
   if(of==NULL){
     *errp = EBADF;
     return -1;
   }
 
+  lock_acquire(of->of_lock);
   result = VOP_ISSEEKABLE(of->vn);
   if(!result){
+    lock_release(of->of_lock);
     *errp = ESPIPE;
     return -1;
   }
@@ -445,6 +503,7 @@ sys_lseek(int fd, off_t pos, int whence, int *errp){
   switch(whence){
     case SEEK_SET:
       if(pos < 0){
+        lock_release(of->of_lock);
         *errp = EINVAL;
         return -1;
       }
@@ -452,6 +511,7 @@ sys_lseek(int fd, off_t pos, int whence, int *errp){
       break;
     case SEEK_CUR:
       if((of->offset + pos) < 0){
+        lock_release(of->of_lock);
         *errp = EINVAL;
         return -1;
       }
@@ -460,28 +520,33 @@ sys_lseek(int fd, off_t pos, int whence, int *errp){
     case SEEK_END:
       result = VOP_STAT(of->vn, &st);
       if(result){
+        lock_release(of->of_lock);
         *errp = result;
         return -1;
       }
       if((st.st_size + pos)<0){
+        lock_release(of->of_lock);
         *errp = EINVAL;
         return -1;
       }
       new_offset = st.st_size + pos;
       break;
     default:
+      lock_release(of->of_lock);
       *errp = EINVAL;
       return -1;
   }
   
   of->offset = new_offset;
+  lock_release(of->of_lock);
   return new_offset;
 }
 
 int 
 sys_dup2(int oldfd, int newfd, int *errp){
   struct openfile *old_of, *new_of;
-  int result;
+  // int result;
+  struct vnode *vn;
 
   if(oldfd < 0 || newfd < 0 || oldfd >= OPEN_MAX || newfd >= OPEN_MAX){
     *errp = EBADF;
@@ -491,24 +556,45 @@ sys_dup2(int oldfd, int newfd, int *errp){
   if(oldfd == newfd)
     return newfd;
   
+  lock_acquire(curproc->ft_lock);
   old_of = curproc->fileTable[oldfd];
   new_of = curproc->fileTable[newfd];
 
   if(old_of == NULL){
+    lock_release(curproc->ft_lock);
     *errp = EBADF;
     return -1;
   }
 
   if(new_of != NULL){
-    result = sys_close(newfd, errp);
-    if(result==-1)
-      return -1;
+    // result = sys_close(newfd, errp);
+    // if(result==-1)
+    //   return -1;
+    curproc->fileTable[newfd] = NULL;
+    lock_acquire(new_of->of_lock);
+    if (--new_of->countRef > 0){
+      lock_release(new_of->of_lock);
+    } else{
+      vn = new_of->vn;
+      new_of->vn = NULL;
+      lock_release(new_of->of_lock);
+      if (vn == NULL) {
+        lock_release(curproc->ft_lock);
+        *errp = EIO;
+        return -1;
+      }
+      vfs_close(vn); 
+      lock_destroy(new_of->of_lock);	
+    }
   }
   
   curproc->fileTable[newfd] = old_of;
+  lock_release(curproc->ft_lock);
+  lock_acquire(old_of->of_lock);
   openfileIncrRefCount(old_of);
   VOP_INCREF(old_of->vn);
 
+  lock_release(old_of->of_lock);
   return newfd;
 }
 
@@ -551,22 +637,27 @@ std_open(int fileno){
     return -1;
   }
   /* search system open file table */
+  lock_acquire(systemFileTable.lk);
   for (i=0; i<SYSTEM_OPEN_MAX; i++) {
-    if (systemFileTable[i].vn==NULL) {
-      of = &systemFileTable[i];
+    if ((systemFileTable.ft)[i].vn==NULL) {
+      of = &(systemFileTable.ft)[i];
       of->vn = v;
       of->offset = 0; // TODO: handle offset with append
       of->countRef = 1;
       of->openflags = openflags;
+      of->of_lock = lock_create("of");
       break;
     }
   }
+  lock_release(systemFileTable.lk);
   if (of==NULL) { 
     return -1;
   }
 
 
+  lock_acquire(curproc->ft_lock);
   curproc->fileTable[fd] = of;
+  lock_release(curproc->ft_lock);
   vfs_close(v);
   return fd;
 
@@ -582,19 +673,23 @@ sys_fstat(int fd, struct stat *statbuf, int *errp){
     return -1;
   }
 
-  if(!is_valid_pointer((userptr_t)statbuf, curproc->p_addrspace)){
+  if(!is_valid_pointer((userptr_t)statbuf, proc_getas())){
     *errp = EFAULT;
     return -1;
   }
 
+  lock_acquire(curproc->ft_lock);
   of = curproc->fileTable[fd];
+  lock_release(curproc->ft_lock);
 
   if(of==NULL){
     *errp = EBADF;
     return -1;
   }
 
+  lock_acquire(of->of_lock);
   result = VOP_STAT(of->vn, statbuf);
+  lock_release(of->of_lock);
   if(result){
     *errp = result;
     return -1;
@@ -615,18 +710,23 @@ sys_getdirentry(int fd, char *buf, size_t buflen, int* errp)
       *errp = EBADF;
       return -1;
     } 
+    lock_acquire(curproc->ft_lock);
     of = curproc->fileTable[fd];
+    lock_release(curproc->ft_lock);
     if (of==NULL){
       *errp = EBADF;
       return -1;
     }
 
+    lock_acquire(of->of_lock);
     if ((of->openflags & 3) == O_WRONLY){
+      lock_release(of->of_lock);
       *errp = EBADF;
       return -1;
     }
 
-    if(!is_valid_pointer((userptr_t)buf, curproc->p_addrspace)){
+    if(!is_valid_pointer((userptr_t)buf, proc_getas())){
+      lock_release(of->of_lock);
       *errp = EFAULT;
       return -1;
     }
@@ -640,16 +740,18 @@ sys_getdirentry(int fd, char *buf, size_t buflen, int* errp)
     u.uio_offset = of->offset;
     u.uio_segflg =UIO_USERISPACE;
     u.uio_rw = UIO_READ;
-    u.uio_space = curproc->p_addrspace;
+    u.uio_space = proc_getas();
 
     result = VOP_GETDIRENTRY(of->vn, &u);
     if(result){
+      lock_release(of->of_lock);
       *errp = result;
       return -1;
     }
 
     //return 0;
     of->offset = u.uio_offset;
+    lock_release(of->of_lock);
     return (buflen - u.uio_resid);
 
 

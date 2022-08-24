@@ -39,6 +39,7 @@
 #include <spinlock.h>
 #include <limits.h>
 #include "opt-shell.h"
+#include <synch.h>
 
 struct addrspace;
 struct thread;
@@ -85,6 +86,7 @@ struct proc {
     int p_status;                   /* status as obtained by exit() */
     pid_t p_pid;                    /* process pid */
 	struct openfile *fileTable[OPEN_MAX];
+	struct lock *ft_lock;
 
 	int p_exited;
 	struct proc *parent_proc;
