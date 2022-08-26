@@ -934,6 +934,12 @@ emufs_namefile(struct vnode *v, struct uio *uio)
 			emufs_lookup(v_to_find, path, &vn2);
 			buf.uio_iov->iov_kbase = base;
 		}
+		if(strlen(respath)+strlen(buffer)+2 > PATH_MAX){
+			kfree(respath);
+			kfree(path);
+			kfree(buffer);
+			return ENAMETOOLONG;
+		}
 		
 		path_append_start(respath, buffer);
 		
@@ -947,11 +953,17 @@ emufs_namefile(struct vnode *v, struct uio *uio)
 	kfree(buffer);
 	kfree(path);
 
+	if (strlen(respath) + 1 > uio->uio_iov->iov_len){
+		kfree(respath);
+		return ERANGE;
+	}
+
 	int i = 0;
 	while(respath[i] != 0){
 		((char*)uio->uio_iov->iov_kbase)[i] = respath[i];
 		i++;
 	}
+	kfree(respath);
 	((char*)uio->uio_iov->iov_kbase)[i] = 0;
 	uio->uio_resid = i;
 	return 0;
