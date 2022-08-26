@@ -20,6 +20,7 @@
 #include <synch.h>
 #include <kern/fcntl.h>
 #include <vfs.h>
+#include <kern/wait.h>
 
 static char karg[ARG_MAX];
 static unsigned char kargbuf[ARG_MAX];
@@ -32,7 +33,8 @@ sys__exit(int status)
 {
   struct proc *p = curproc;
   spinlock_acquire(&p->p_lock);
-  p->p_status = (status & 0xff) << 2; /* just lower 8 bits returned (2 bit shift: see include/kern/wait.h) */
+  //p->p_status = (status & 0xff) << 2; /* just lower 8 bits returned (2 bit shift: see include/kern/wait.h) */
+  p->p_status = _MKWAIT_EXIT(status); /* just lower 8 bits returned (2 bit shift: see include/kern/wait.h) */
   p->p_exited = 1;
   spinlock_release(&p->p_lock);
   proc_remthread(curthread);
@@ -373,7 +375,7 @@ sys_execv(userptr_t program, userptr_t args, int *errp)
   }
   */
 
-	/* Open the file. */
+  /* Open the file. */
 	result = vfs_open(prg_path, O_RDONLY, 0, &v);
 	if (result) {
     *errp = result;
