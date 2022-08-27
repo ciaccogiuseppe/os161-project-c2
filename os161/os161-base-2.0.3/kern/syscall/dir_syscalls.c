@@ -10,13 +10,18 @@
 #include <copyinout.h>
 #include <kern/fcntl.h>
 
-#define PATH_LEN 128
+//#define PATH_LEN 128
 // sys_chdir
 int 
 sys_chdir(userptr_t path, int *errp){
-    char kern_buf[PATH_LEN];
+    char kern_buf[PATH_MAX];
     int err;
     struct vnode *dir;
+    
+    if(path != NULL && strlen((char*)path) > PATH_MAX){
+        *errp = ENAMETOOLONG;
+        return -1;
+    }
 
     err = copyinstr(path, kern_buf, sizeof(kern_buf), NULL);
     if (err){
@@ -48,6 +53,10 @@ sys___getcwd(userptr_t buf_ptr, size_t buflen, int *errp){
     int err;
     struct uio buf;
     struct iovec vec;
+    if(buf_ptr == NULL){
+        *errp = EINVAL;
+        return -1;
+    }
     uio_kinit(
         &vec,
         &buf,
