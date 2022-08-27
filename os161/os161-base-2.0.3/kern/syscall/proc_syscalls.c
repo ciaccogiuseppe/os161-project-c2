@@ -94,12 +94,12 @@ int sys_waitpid(pid_t pid, int* statusp, int options, int *errp, bool is_kernel)
 
   // Process has already exited
   if (p->p_exited == 1){
+    s = p->p_status;
     spinlock_release(&p->p_lock);
-    return pid;
+  } else {
+    spinlock_release(&p->p_lock); 
+    s = proc_wait(p);
   }
-  
-  spinlock_release(&p->p_lock); 
-  s = proc_wait(p);
 
   //The status_ptr pointer may also be NULL, in which case waitpid() ignores the child's return status
   if (statusp != NULL){
@@ -183,39 +183,23 @@ int sys_fork(struct trapframe *ctf, pid_t *retval) {
 
 static int
 align_arg(char arg[ARG_MAX], int align){
-  char *ptr = arg;
-  int len = 0, diff;
+  int len = strlen(arg) +1 , diff;
 
-  while(*ptr != '\0'){
-    ptr+=1;
-    len++;
-  }
-
-  len++;
-  if(len % align == 0){
+  if(len % align == 0)
     return len;
-  }
 
   diff = align - (len % align);
-  while(diff){
-    *(++ptr) = '\0';
-    len++;
-    diff--;
-  }
+  
+  for(int i = len; i < len+diff; i++)
+    arg[i] = '\0';
 
-  return len;
+  return len + diff;
 }
 
 static int 
 get_aligned_len(char arg[ARG_MAX], int align){
-  char *p = arg;
-  int len = 0;
+  int len = strlen(arg) + 1;
 
-  while(*p != '\0'){
-    p+=1;
-    len++;
-  }
-  len++;
   if(len % align == 0)
     return len;
   
@@ -224,13 +208,11 @@ get_aligned_len(char arg[ARG_MAX], int align){
 
 static int
 copy_args(userptr_t uargs, int *nargs, int *buflen){
-  int i = 0, err, n_last = 0;
+  int i = 0, err, n_last = 0, argc = 0, len = 0;
   char *ptr;
   unsigned char *p_begin = NULL, *p_end = NULL;
   uint32_t offset, last_offset;
 
-  *nargs = 0;
-  *buflen = 0;
   while((err = copyin((userptr_t)uargs + i*4, &ptr, sizeof(ptr))) == 0){
     if(ptr == NULL)
       break;
@@ -238,21 +220,20 @@ copy_args(userptr_t uargs, int *nargs, int *buflen){
     if(err)
       return err;
     i++;
-    *nargs += 1;
-    *buflen += get_aligned_len(karg, 4) + sizeof(char*);
+    argc += 1;
+    len += get_aligned_len(karg, 4) + sizeof(char*);
   }
 
   if(i==0 && err)
     return err;
 
-  *nargs += 1;
-  *buflen += sizeof(char*);
+  len += sizeof(char*);
 
   i = 0;
-  p_begin = kargbuf;
-  p_end = kargbuf + (*nargs * sizeof(char*));
   n_last = 0;
-  last_offset = *nargs * sizeof(char*);
+  last_offset = (argc+1) * sizeof(char*);
+  p_begin = kargbuf;
+  p_end = kargbuf + last_offset;
   while((err = copyin((userptr_t)uargs + i*4, &ptr, sizeof(ptr))) == 0){
     if(ptr == NULL)
       break;
@@ -279,6 +260,9 @@ copy_args(userptr_t uargs, int *nargs, int *buflen){
   *(p_begin + 2) = 0;
   *(p_begin + 3) = 0;
 
+  *nargs = argc;
+  *buflen = len;
+
   return 0;
 }
 
@@ -287,56 +271,15 @@ adjust_kargbuf(int n_params, vaddr_t stack_ptr){
   int i, index;
   uint32_t new_offset = 0, old_offset = 0;
 
-  for(i = 0; i < n_params-1; i++){
+  for(i = 0; i < n_params; i++){
     index = i * sizeof(char*);
     old_offset = ((0xff  & kargbuf[index+3])<< 24) | ((0xff  & kargbuf[index+2])<< 16) |
       ((0xff  & kargbuf[index+1])<< 8) | (0xff  & kargbuf[index]);
     new_offset = stack_ptr + old_offset;
-    memcpy(kargbuf + index, &new_offset, sizeof(int));
+    memcpy(kargbuf + index, &new_offset, sizeof(char*));
   }
   return 0;
 }
-
-/*static int 
-get_argc(char **args, struct addrspace *as, int *errp){
-  int argc;
-  for(argc = 0; args[argc]!=NULL; argc++){
-    if(!is_valid_pointer((userptr_t)(args[argc]), as)){
-      *errp = EFAULT;
-      return -1;
-    }
-  }
-  return argc;
-}*/
-
-/*static int
-get_argv(int argc, char **args, vaddr_t *stackptr, vaddr_t *argvptr){
-  int result;
-  vaddr_t stackp = *stackptr, argvp;
-
-  stackp -= (vaddr_t) (argc+1)*sizeof(char*);
-  argvp = stackp;
-
-  for(int i = 0; i < argc; i++){
-    size_t copied = 0;
-    size_t arg_len = strlen(args[i])+1;
-    stackp -= arg_len;
-
-    result = copyoutstr(args[i], (userptr_t) stackp, arg_len, &copied);
-    if(result){
-      return result;
-    }
-
-    result = copyout((void*)stackp, (userptr_t)argvp + i*sizeof(char*),sizeof(char*));
-    if(result){
-      return result;
-    }
-  }
-
-  *stackptr = stackp;
-  *argvptr = argvp;
-  return 0;
-}*/
 
 int
 sys_execv(userptr_t program, userptr_t args, int *errp)
@@ -368,14 +311,8 @@ sys_execv(userptr_t program, userptr_t args, int *errp)
     return -1;
   }
 
-  /*
-  argc = get_argc((char**) args, proc_getas(), errp);
-  if(argc < 0){
-    return -1;
-  }
-  */
 
-  /* Open the file. */
+	/* Open the file. */
 	result = vfs_open(prg_path, O_RDONLY, 0, &v);
 	if (result) {
     *errp = result;
@@ -403,18 +340,8 @@ sys_execv(userptr_t program, userptr_t args, int *errp)
 	old_as = proc_setas(new_as);
 	as_activate();
 
-  /*
-  result = get_argv(argc, (char**)args, &stackptr, &argv_ptr);
-  if(result){
-    proc_setas(old_as);
-    as_activate();
-    as_destroy(new_as);
-    vfs_close(v);
-    return result;
-  }
-  */
-
-	if (std_open(STDIN_FILENO) != STDIN_FILENO){
+	/*
+  if (std_open(STDIN_FILENO) != STDIN_FILENO){
     proc_setas(old_as);
     as_activate();
     as_destroy(new_as);
@@ -435,6 +362,7 @@ sys_execv(userptr_t program, userptr_t args, int *errp)
     vfs_close(v);
 		return EIO;
 	}
+  */
 
 	/* Load the executable. */
 	result = load_elf(v, &entrypoint);
@@ -486,7 +414,7 @@ sys_execv(userptr_t program, userptr_t args, int *errp)
   as_destroy(old_as);
 
 	/* Warp to user mode. */
-	enter_new_process(argc-1 /*argc*/, argc!=0?((userptr_t) stackptr):NULL /*userspace addr of argv*/,
+	enter_new_process(argc /*argc*/, argc!=0?((userptr_t) stackptr):NULL /*userspace addr of argv*/,
 			    NULL /*userspace addr of environment*/,
 			    stackptr, entrypoint);
 

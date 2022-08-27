@@ -48,36 +48,6 @@
 #include <copyinout.h>
 
 /*
-static int
-get_argv(int argc, char **args, vaddr_t *stackptr, vaddr_t *argvptr){
-  int result;
-  vaddr_t stackp = *stackptr, argvp;
-
-  stackp -= (vaddr_t) (argc+1)*sizeof(char*);
-  argvp = stackp;
-
-  for(int i = 0; i < argc; i++){
-    size_t copied = 0;
-    size_t arg_len = strlen(args[i])+1;
-    stackp -= arg_len;
-
-    result = copyoutstr(args[i], (userptr_t) stackp, arg_len, &copied);
-    if(result){
-      return result;
-    }
-
-    result = copyout((void*)stackp, (userptr_t)argvp + i*sizeof(char*),sizeof(char*));
-    if(result){
-      return result;
-    }
-  }
-
-  *stackptr = stackp;
-  *argvptr = argvp;
-  return 0;
-}*/
-
-/*
  * Load program "progname" and start running it in usermode.
  * Does not return except on error.
  *
@@ -156,9 +126,13 @@ runprogram(char *progname)
 		return result;
 	}*/
 
+	// space for argv vector of pointers
 	stackptr -= (vaddr_t) ((argc+1)*sizeof(char*));
+
+	// address where to write the vector of pointers
 	argvptr = stackptr;
 
+	// copy arguments into user stack
 	for(int i = 0; i < argc; i++){
 		size_t copied = 0;
 		size_t arg_len = strlen(argv[i]) + 1;
@@ -172,6 +146,8 @@ runprogram(char *progname)
 			return result;
 		}
 	}
+
+	bzero((void*)(argvptr + argc*sizeof(char*)), sizeof(char*));
 
 	/* Warp to user mode. */
 	enter_new_process(argc, (userptr_t) argvptr,
