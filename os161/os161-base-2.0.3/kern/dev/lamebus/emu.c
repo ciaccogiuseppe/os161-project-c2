@@ -842,7 +842,7 @@ path_merge(char* dest, char* str1, char* str2){
 }
 
 static
-void
+int
 path_append_start(char* str1, char* str2){
 	int count1 = strlen(str1);
 	int count2 = strlen(str2);
@@ -851,6 +851,9 @@ path_append_start(char* str1, char* str2){
 	int j;
 
 	tmpstr = kmalloc((count1+count2+2)*sizeof(char));
+	if(tmpstr == NULL){
+		return -1;
+	}
 	tmpstr[0] = '/';
 	
 	for (i = 0; i < count2; i++){
@@ -869,6 +872,7 @@ path_append_start(char* str1, char* str2){
 	}
 	str1[i] = 0;
 	kfree(tmpstr);
+	return 0;
 }
 
 /*
@@ -894,8 +898,20 @@ emufs_namefile(struct vnode *v, struct uio *uio)
 	char* base;
 	char parent[3] = "..";
 	char* respath = kmalloc(PATH_MAX*sizeof(char));
+	if(respath == NULL){
+		return ENOMEM;
+	}
 	char* buffer = kmalloc(PATH_MAX*sizeof(char));
+	if(buffer == NULL){
+		kfree(respath);
+		return ENOMEM;
+	}
 	char* path = kmalloc(PATH_MAX*sizeof(char));
+	if(path == NULL){
+		kfree(respath);
+		kfree(buffer);
+		return ENOMEM;
+	}
 	for(int i = 0; i < PATH_MAX; i++){
 		respath[i] = 0;
 	}
@@ -941,7 +957,12 @@ emufs_namefile(struct vnode *v, struct uio *uio)
 			return ENAMETOOLONG;
 		}
 		
-		path_append_start(respath, buffer);
+		if (path_append_start(respath, buffer) == -1){
+			kfree(respath);
+			kfree(path);
+			kfree(buffer);
+			return ENOMEM;
+		}
 		
 		VOP_DECREF(v_to_find);
 		if(v_to_find != v->vn_data){
