@@ -46,6 +46,7 @@
 #include "opt-sfs.h"
 #include "opt-net.h"
 #include <syscall.h>
+#include <current.h>
 
 /*
  * In-kernel menu and command dispatcher.
@@ -100,6 +101,9 @@ cmd_progthread(void *ptr, unsigned long nargs)
 	if (result) {
 		kprintf("Running program %s failed: %s\n", args[0],
 			strerror(result));
+		#if OPT_SHELL
+		proc_signal_end(curproc);
+		#endif
 		return;
 	}
 
