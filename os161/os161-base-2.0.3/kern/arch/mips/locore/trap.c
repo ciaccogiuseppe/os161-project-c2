@@ -113,6 +113,7 @@ kill_curthread(vaddr_t epc, unsigned code, vaddr_t vaddr)
 	/*
 	 * You will probably want to change this.
 	 */
+	#if OPT_SHELL
 	curproc->p_exited = 1;
 	if(sig == SIGSEGV){
 		curproc->p_status = _MKWAIT_CORE(sig);
@@ -122,6 +123,7 @@ kill_curthread(vaddr_t epc, unsigned code, vaddr_t vaddr)
 	}
 
 	thread_exit();
+	#endif
 
 	//should not return
 	kprintf("Fatal user mode trap %u sig %d (%s, epc 0x%x, vaddr 0x%x)\n",
