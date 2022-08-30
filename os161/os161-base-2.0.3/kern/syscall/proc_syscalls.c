@@ -68,7 +68,7 @@ int sys_waitpid(pid_t pid, int* statusp, int options, int *errp, bool is_kernel)
   }
   
   // The options argument should be 0. It's not required to implement any options
-  if (options != 0) {
+  if (options != 0 && options != WNOHANG) {
     *errp = EINVAL;
     return -1;
   }
@@ -96,9 +96,14 @@ int sys_waitpid(pid_t pid, int* statusp, int options, int *errp, bool is_kernel)
   if (p->p_exited == 1){
     s = p->p_status;
     spinlock_release(&p->p_lock);
+    proc_destroy(p);
   } else {
     spinlock_release(&p->p_lock); 
-    s = proc_wait(p);
+    if(options == WNOHANG){ // to check
+      return 0;
+    } else {
+      s = proc_wait(p);
+    }
   }
 
   //The status_ptr pointer may also be NULL, in which case waitpid() ignores the child's return status
