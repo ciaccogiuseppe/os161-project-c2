@@ -294,7 +294,8 @@ sys_execv(userptr_t program, userptr_t args, int *errp)
 	vaddr_t entrypoint, stackptr;
   // vaddr_t argv_ptr;
 	int result, argc, buflen;
-  char prg_path[PATH_MAX];
+  //char prg_path[PATH_MAX];
+  char* prg_path;
 
   KASSERT(curthread != NULL);
   KASSERT(curproc != NULL);
@@ -309,8 +310,14 @@ sys_execv(userptr_t program, userptr_t args, int *errp)
     *errp = EFAULT;
     return -1;
   }
+  int len = strlen((char*)program) + 1;
 
-  result = copyinstr(program, prg_path, sizeof(prg_path), NULL);
+  prg_path = kmalloc(len * sizeof(char));
+  if(prg_path == NULL){
+      *errp = ENOMEM;
+      return -1;
+  }
+  result = copyinstr(program, prg_path, len, NULL);
   if(result){
     *errp = result;
     return -1;
@@ -320,12 +327,14 @@ sys_execv(userptr_t program, userptr_t args, int *errp)
 	/* Open the file. */
 	result = vfs_open(prg_path, O_RDONLY, 0, &v);
 	if (result) {
+    kfree(prg_path);
     *errp = result;
 		return -1;
 	}
 
   result = copy_args(args, &argc, &buflen);
   if(result){
+    kfree(prg_path);
     vfs_close(v);
     *errp = result;
     return -1;
@@ -336,6 +345,7 @@ sys_execv(userptr_t program, userptr_t args, int *errp)
 	/* Create a new address space. */
 	new_as = as_create();
 	if (new_as == NULL) {
+    kfree(prg_path);
 		vfs_close(v);
     *errp = ENOMEM;
 		return -1;
@@ -372,6 +382,7 @@ sys_execv(userptr_t program, userptr_t args, int *errp)
 	/* Load the executable. */
 	result = load_elf(v, &entrypoint);
 	if (result) {
+    kfree(prg_path);
     proc_setas(old_as);
     as_activate();
     as_destroy(new_as);
@@ -384,6 +395,7 @@ sys_execv(userptr_t program, userptr_t args, int *errp)
   /* Define the user stack in the address space */
 	result = as_define_stack(new_as, &stackptr);
 	if (result) {
+    kfree(prg_path);
     proc_setas(old_as);
     as_activate();
     as_destroy(new_as);
@@ -396,6 +408,7 @@ sys_execv(userptr_t program, userptr_t args, int *errp)
   stackptr -= buflen;
   result = adjust_kargbuf(argc, stackptr);
   if(result){
+    kfree(prg_path);
     proc_setas(old_as);
     as_activate();
     as_destroy(new_as);
@@ -406,6 +419,7 @@ sys_execv(userptr_t program, userptr_t args, int *errp)
 
   result = copyout(kargbuf, (userptr_t)stackptr, buflen);
   if(result){
+    kfree(prg_path);
     proc_setas(old_as);
     as_activate();
     as_destroy(new_as);
@@ -417,6 +431,7 @@ sys_execv(userptr_t program, userptr_t args, int *errp)
 	/* Done with the file now. */
 	vfs_close(v);
   as_destroy(old_as);
+  kfree(prg_path);
 
 	/* Warp to user mode. */
 	enter_new_process(argc /*argc*/, argc!=0?((userptr_t) stackptr):NULL /*userspace addr of argv*/,

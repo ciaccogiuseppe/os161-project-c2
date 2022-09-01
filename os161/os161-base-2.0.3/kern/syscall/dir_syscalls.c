@@ -28,7 +28,8 @@ is_valid_pointer(userptr_t addr, struct addrspace *as){
 // sys_chdir
 int 
 sys_chdir(userptr_t path, int *errp){
-    char kern_buf[PATH_MAX];
+    //char kern_buf[PATH_MAX];
+    char* kern_buf;
     int err;
     struct vnode *dir;
     
@@ -41,15 +42,25 @@ sys_chdir(userptr_t path, int *errp){
         *errp = ENAMETOOLONG;
         return -1;
     }
+    
+    int len = strlen((char*)path) + 1;
 
-    err = copyinstr(path, kern_buf, sizeof(kern_buf), NULL);
+    kern_buf = kmalloc(len * sizeof(char));
+    if(kern_buf == NULL){
+        *errp = ENOMEM;
+        return -1;
+    }
+
+    err = copyinstr(path, kern_buf, len, NULL);
     if (err){
+        kfree(kern_buf);
         *errp = err;
         return -1;
     }
 
     err = vfs_open( kern_buf, O_RDONLY, 0644, &dir );
 	if( err ){
+        kfree(kern_buf);
         *errp = err;
         return -1;
     }
@@ -59,10 +70,11 @@ sys_chdir(userptr_t path, int *errp){
 	vfs_close( dir );
 
 	if( err ){
+        kfree(kern_buf);
         *errp = err;
         return -1;
     }
-    
+    kfree(kern_buf);
     return 0;
 }
 

@@ -308,7 +308,8 @@ sys_open(userptr_t path, int openflags, mode_t mode, int *errp)
   struct vnode *v;
   struct openfile *of=NULL;; 	
   int result;
-  char kbuf[PATH_MAX];
+  //char kbuf[PATH_MAX];
+  char* kbuf;
 
   if(path == NULL){
     *errp = EFAULT;
@@ -320,14 +321,24 @@ sys_open(userptr_t path, int openflags, mode_t mode, int *errp)
     return -1;
   }
 
-  result = copyinstr(path, kbuf, sizeof(kbuf), NULL);
+  int len = strlen((char*)path) + 1;
+
+  kbuf = kmalloc(len * sizeof(char));
+  if(kbuf == NULL){
+      *errp = ENOMEM;
+      return -1;
+  }
+
+  result = copyinstr(path, kbuf, len, NULL);
   if(result){
+    kfree(kbuf);
     *errp = result;
     return -1;
   }
 
   result = vfs_open(kbuf, openflags, mode, &v);
   if (result) {
+    kfree(kbuf);
     *errp = result;
     return -1;
   }
@@ -355,6 +366,7 @@ sys_open(userptr_t path, int openflags, mode_t mode, int *errp)
       if (curproc->fileTable[fd] == NULL) {
 	      curproc->fileTable[fd] = of;
         lock_release(curproc->ft_lock);
+        kfree(kbuf);
 	      return fd;
       }
     }
@@ -362,7 +374,7 @@ sys_open(userptr_t path, int openflags, mode_t mode, int *errp)
     // no free slot in process open file table
     *errp = EMFILE;
   }
-
+  kfree(kbuf);
   vfs_close(v);
   return -1;
 }
