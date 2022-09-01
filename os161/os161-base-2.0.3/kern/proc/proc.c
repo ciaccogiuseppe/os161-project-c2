@@ -81,7 +81,7 @@ proc_search_pid(pid_t pid) {
   
   // Check if the pid argument is valid (pid 0 is not used)
   // The upper bound is MAX_PROC > PID_MAX
-  if (pid < PID_MIN || pid >= MAX_PROC)
+  if (pid < PID_MIN || pid > MAX_PROC)
 	return NULL;
 
   // KASSERT(pid>=0 && pid<MAX_PROC);

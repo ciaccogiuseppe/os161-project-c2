@@ -191,6 +191,7 @@ static int
 freeppages(paddr_t addr, unsigned long npages){
   long i, first, np=(long)npages;	
 
+  if(addr == 0) return 0;
   if (!isTableActive()) return 0; 
   first = addr/PAGE_SIZE;
   KASSERT(allocSize!=NULL);
@@ -200,6 +201,7 @@ freeppages(paddr_t addr, unsigned long npages){
   for (i=first; i<first+np; i++) {
     freeRamFrames[i] = (unsigned char)1;
   }
+  allocSize[first] = 0;
   spinlock_release(&freemem_lock);
 
   return 1;
