@@ -106,6 +106,7 @@
 #define ECONNRESET      62     /* Connection reset by peer */
 #define EMSGSIZE        63     /* Message too large */
 #define ENOTSUP         64     /* Threads operation not supported */
-
+#define EOVERFLOW       65     /* Value too large for defined data type */
+#define ETXTBSY         66     /* Text file busy */
 
 #endif /* _KERN_ERRNO_H_ */

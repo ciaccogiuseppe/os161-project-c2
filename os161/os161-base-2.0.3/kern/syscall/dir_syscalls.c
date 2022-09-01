@@ -77,6 +77,10 @@ sys___getcwd(userptr_t buf_ptr, size_t buflen, int *errp){
         *errp = EFAULT;
         return -1;
     }
+    if(buflen == 0){
+        *errp = EINVAL;
+        return -1;
+    }
     uio_kinit(
         &vec,
         &buf,
@@ -85,7 +89,7 @@ sys___getcwd(userptr_t buf_ptr, size_t buflen, int *errp){
         0,
         UIO_READ
     );
-    buf.uio_space = curproc->p_addrspace;
+    buf.uio_space = proc_getas();
     buf.uio_segflg = UIO_USERSPACE;
     err = vfs_getcwd(&buf);
     if(err){

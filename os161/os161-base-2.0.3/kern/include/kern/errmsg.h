@@ -104,6 +104,8 @@ const char *const sys_errlist[] = {
 	"Connection reset by peer",   /* ECONNRESET */
 	"Message too large",          /* EMSGSIZE */
 	"Threads operation not supported",/* ENOTSUP */
+	"Value too large for defined data type", /* EOVERFLOW */
+	"Text file busy", /* ETXTBSY */
 };
 
 /*
