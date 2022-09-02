@@ -50,7 +50,7 @@
 #include <vnode.h>
 #include <syscall.h>
 #include <kern/unistd.h>
-
+#include <vfs.h>
 #include <synch.h>
 
 #if OPT_SHELL
@@ -298,6 +298,25 @@ proc_destroy(struct proc *proc)
 
 	#if OPT_SHELL
 	proc_end_waitpid(proc);
+	for (int fd=0; fd<OPEN_MAX; fd++) {
+		struct openfile *of = proc->fileTable[fd];
+		if (of != NULL) {
+			lock_acquire(of->of_lock);
+			if (--of->countRef == 0){
+				if (of->vn != NULL){
+					vfs_close(of->vn);
+				}
+				lock_release(of->of_lock);
+				lock_destroy(of->of_lock);
+			}
+			else{
+				lock_release(of->of_lock);
+			}
+		}
+		
+		proc->fileTable[fd] = NULL;
+	}
+	
 	lock_destroy(proc->ft_lock);
 	#endif
 
