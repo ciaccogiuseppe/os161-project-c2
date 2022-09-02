@@ -671,6 +671,7 @@ std_open(int fileno){
   }
   lock_release(systemFileTable.lk);
   if (of==NULL) { 
+    vfs_close(v);
     return -1;
   }
 
@@ -678,7 +679,6 @@ std_open(int fileno){
   lock_acquire(curproc->ft_lock);
   curproc->fileTable[fd] = of;
   lock_release(curproc->ft_lock);
-  vfs_close(v);
   return fd;
 
 }
