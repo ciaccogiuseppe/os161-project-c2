@@ -133,5 +133,7 @@ struct proc *proc_search_pid(pid_t pid);
 void proc_signal_end(struct proc *proc);
 
 void proc_file_table_copy(struct proc *psrc, struct proc *pdest);
+
+bool is_proc_table_full(void);
 #endif
 #endif /* _PROC_H_ */

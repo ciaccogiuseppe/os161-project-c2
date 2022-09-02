@@ -60,6 +60,7 @@ static struct _processTable {
   struct proc *proc[MAX_PROC+1]; /* [0] not used. pids are >= 1 */
   int last_i;           /* index of last allocated pid */
   struct spinlock lk;	/* Lock for this table */
+  bool is_full;
 } processTable;
 
 struct lock *ft_copy_lock;
@@ -71,6 +72,14 @@ struct lock *ft_copy_lock;
 struct proc *kproc;
 
 #if OPT_SHELL
+bool
+is_proc_table_full(void){
+	bool tmp;
+	spinlock_acquire(&processTable.lk);
+	tmp = processTable.is_full;
+	spinlock_release(&processTable.lk);
+	return tmp;
+}
 /*
  * G.Cabodi - 2019
  * Initialize support for pid/waitpid.
@@ -117,10 +126,13 @@ proc_init_waitpid(struct proc *proc, const char *name) {
     i++;
     if (i>MAX_PROC) i=1;
   }
-  spinlock_release(&processTable.lk);
   if (proc->p_pid==0) {
-    panic("too many processes. proc table is full\n");
+    // panic("too many processes. proc table is full\n");
+	processTable.is_full = true;
+	spinlock_release(&processTable.lk);
+	return;
   }
+  spinlock_release(&processTable.lk);
   proc->p_status = 0;
 #if USE_SEMAPHORE_FOR_WAITPID
   proc->p_sem = sem_create(name, 0);
@@ -142,6 +154,7 @@ proc_end_waitpid(struct proc *proc) {
   i = proc->p_pid;
   KASSERT(i>0 && i<=MAX_PROC);
   processTable.proc[i] = NULL;
+  processTable.is_full = false;
   spinlock_release(&processTable.lk);
 
 #if USE_SEMAPHORE_FOR_WAITPID
@@ -187,6 +200,13 @@ proc_create(const char *name)
 	proc->ft_lock = lock_create(proc->p_name);
 
 	proc_init_waitpid(proc,name);
+	if(is_proc_table_full()){
+		kfree(proc->p_name);
+		spinlock_cleanup(&proc->p_lock);
+		lock_destroy(proc->ft_lock);
+		kfree(proc);
+		return NULL;
+	}
     bzero(proc->fileTable,OPEN_MAX*sizeof(struct openfile *));	
 #endif
 
@@ -297,6 +317,7 @@ proc_bootstrap(void)
 	}
 #if OPT_SHELL
 	spinlock_init(&processTable.lk);
+	processTable.is_full = false;
 	/* kernel process is not registered in the table */
 	// processTable.active = 1;
 	sft_init();

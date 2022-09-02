@@ -144,8 +144,11 @@ int sys_fork(struct trapframe *ctf, pid_t *retval) {
   name = curproc->p_name;
   spinlock_release(&curproc->p_lock);
   newp = proc_create_runprogram(name);
-  if (newp == NULL) {
-    return ENOMEM;
+  if(newp == NULL){
+    if(is_proc_table_full())
+		  return ENPROC;
+    else
+      return ENOMEM;
   }
 
   /* done here as we need to duplicate the address space 
@@ -230,7 +233,7 @@ copy_args(userptr_t uargs, int *nargs, int *buflen){
     len += get_aligned_len(karg, 4) + sizeof(char*);
   }
 
-  if(i==0 && err)
+  if(err)
     return err;
 
   len += sizeof(char*);
@@ -257,6 +260,9 @@ copy_args(userptr_t uargs, int *nargs, int *buflen){
     last_offset = offset;
     i++;
   }
+
+  if(err)
+    return err;
 
   *p_begin = 0;
 

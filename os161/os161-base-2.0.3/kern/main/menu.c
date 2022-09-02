@@ -131,6 +131,11 @@ common_prog(int nargs, char **args)
 
 	/* Create a process for the new program to run in. */
 	proc = proc_create_runprogram(args[0] /* name */);
+	#if OPT_SHELL
+	if(proc == NULL && is_proc_table_full()){
+		return ENPROC;
+	}
+	#endif
 	if (proc == NULL) {
 		return ENOMEM;
 	}
