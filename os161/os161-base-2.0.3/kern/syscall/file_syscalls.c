@@ -528,6 +528,10 @@ sys_lseek(int fd, off_t pos, int whence, int *errp){
         return -1;
       }
       new_offset = of->offset + pos;
+      if((new_offset < of->offset) && (pos > 0)){
+        *errp = EOVERFLOW;
+        return -1;
+      }
       break;
     case SEEK_END:
       result = VOP_STAT(of->vn, &st);
@@ -542,6 +546,10 @@ sys_lseek(int fd, off_t pos, int whence, int *errp){
         return -1;
       }
       new_offset = st.st_size + pos;
+      if((new_offset < st.st_size) && (pos > 0)){
+        *errp = EOVERFLOW;
+        return -1;
+      }
       break;
     default:
       lock_release(of->of_lock);
