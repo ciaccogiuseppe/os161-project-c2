@@ -289,10 +289,11 @@ sys_execv(userptr_t program, userptr_t args, int *errp)
   // vaddr_t argv_ptr;
 	int result, argc, buflen;
   //char prg_path[PATH_MAX];
-  char* prg_path;
+  char* prg_path, *prg_name;
 
   KASSERT(curthread != NULL);
   KASSERT(curproc != NULL);
+  KASSERT(curproc->p_numthreads == 1);
 
 
   if(!is_valid_pointer(program, proc_getas())){
@@ -311,12 +312,32 @@ sys_execv(userptr_t program, userptr_t args, int *errp)
       *errp = ENOMEM;
       return -1;
   }
+
   result = copyinstr(program, prg_path, len, NULL);
   if(result){
     *errp = result;
     return -1;
   }
 
+  prg_name = kstrdup(prg_path);
+  if(prg_name == NULL){
+    *errp = ENOMEM;
+    return -1;
+  }
+
+  spinlock_acquire(&curproc->p_lock);
+  kfree(curproc->p_name);
+  curproc->p_name =prg_name;
+  spinlock_release(&curproc->p_lock);
+
+  prg_name = kstrdup(prg_path);
+  if(prg_name == NULL){
+    *errp = ENOMEM;
+    return -1;
+  }
+
+  kfree(curthread->t_name);
+  curthread->t_name = prg_name;
 
 	/* Open the file. */
 	result = vfs_open(prg_path, O_RDONLY, 0, &v);
