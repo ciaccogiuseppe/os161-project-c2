@@ -215,7 +215,8 @@ static int
 copy_args(userptr_t uargs, int *nargs, int *buflen){
   int i = 0, err, n_last = 0, argc = 0, len = 0;
   char *ptr;
-  unsigned char *p_begin = NULL, *p_end = NULL;
+  unsigned int *p_begin = NULL;
+  unsigned char *p_end = NULL;
   uint32_t offset, last_offset;
 
   while((err = copyin((userptr_t)uargs + i*4, &ptr, sizeof(ptr))) == 0){
@@ -237,7 +238,7 @@ copy_args(userptr_t uargs, int *nargs, int *buflen){
   i = 0;
   n_last = 0;
   last_offset = (argc+1) * sizeof(char*);
-  p_begin = kargbuf;
+  p_begin = (unsigned int *) kargbuf;
   p_end = kargbuf + last_offset;
   while((err = copyin((userptr_t)uargs + i*4, &ptr, sizeof(ptr))) == 0){
     if(ptr == NULL)
@@ -247,23 +248,17 @@ copy_args(userptr_t uargs, int *nargs, int *buflen){
       return err;
     offset = last_offset + n_last;
     n_last = align_arg(karg, 4);
-    *p_begin = offset & 0xff;
-    *(p_begin+1) = (offset >> 8) & 0xff;
-    *(p_begin+2) = (offset >> 16) & 0xff;
-    *(p_begin+3) = (offset >> 24) & 0xff;
+    *p_begin = offset;
 
     memcpy(p_end, karg, n_last);
 
     p_end += n_last;
-    p_begin += 4;
+    p_begin += 1;
     last_offset = offset;
     i++;
   }
 
   *p_begin = 0;
-  *(p_begin + 1) = 0;
-  *(p_begin + 2) = 0;
-  *(p_begin + 3) = 0;
 
   *nargs = argc;
   *buflen = len;
@@ -278,8 +273,7 @@ adjust_kargbuf(int n_params, vaddr_t stack_ptr){
 
   for(i = 0; i < n_params; i++){
     index = i * sizeof(char*);
-    old_offset = ((0xff  & kargbuf[index+3])<< 24) | ((0xff  & kargbuf[index+2])<< 16) |
-      ((0xff  & kargbuf[index+1])<< 8) | (0xff  & kargbuf[index]);
+    old_offset = *((unsigned int *)(kargbuf+index));
     new_offset = stack_ptr + old_offset;
     memcpy(kargbuf + index, &new_offset, sizeof(char*));
   }
@@ -352,6 +346,7 @@ sys_execv(userptr_t program, userptr_t args, int *errp)
 	}
 
   /* Switch to it and activate it. */
+  as_deactivate(); // do nothing
 	old_as = proc_setas(new_as);
 	as_activate();
 
@@ -383,6 +378,7 @@ sys_execv(userptr_t program, userptr_t args, int *errp)
 	result = load_elf(v, &entrypoint);
 	if (result) {
     kfree(prg_path);
+    as_deactivate(); // do nothing
     proc_setas(old_as);
     as_activate();
     as_destroy(new_as);
@@ -396,6 +392,7 @@ sys_execv(userptr_t program, userptr_t args, int *errp)
 	result = as_define_stack(new_as, &stackptr);
 	if (result) {
     kfree(prg_path);
+    as_deactivate(); // do nothing
     proc_setas(old_as);
     as_activate();
     as_destroy(new_as);
@@ -409,6 +406,7 @@ sys_execv(userptr_t program, userptr_t args, int *errp)
   result = adjust_kargbuf(argc, stackptr);
   if(result){
     kfree(prg_path);
+    as_deactivate(); // do nothing
     proc_setas(old_as);
     as_activate();
     as_destroy(new_as);
@@ -420,6 +418,7 @@ sys_execv(userptr_t program, userptr_t args, int *errp)
   result = copyout(kargbuf, (userptr_t)stackptr, buflen);
   if(result){
     kfree(prg_path);
+    as_deactivate(); // do nothing
     proc_setas(old_as);
     as_activate();
     as_destroy(new_as);
