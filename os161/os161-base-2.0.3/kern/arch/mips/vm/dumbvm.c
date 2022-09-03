@@ -70,6 +70,20 @@
  */
 static struct spinlock stealmem_lock = SPINLOCK_INITIALIZER;
 
+#if OPT_SHELL
+int 
+is_valid_pointer(userptr_t addr, struct addrspace *as){
+  unsigned int pointer = (unsigned int) addr;
+  if (pointer >= MIPS_KSEG0)
+    return 0;
+  if(!(((pointer >= as->as_vbase1) && (pointer < as->as_vbase1 + PAGE_SIZE*as->as_npages1))||
+  ((pointer >= as->as_vbase2) && (pointer < as->as_vbase2 + PAGE_SIZE*as->as_npages2))||
+  (pointer>=MIPS_KSEG0 - PAGE_SIZE*DUMBVM_STACKPAGES)))
+    return 0;
+  return 1;
+}
+#endif
+
 #if DUMBVM_WITH_FREE
 
 /* G.Cabodi - support for free/alloc */

@@ -45,17 +45,6 @@ sys__exit(int status)
   (void) status; // TODO: status handling
 }
 
-static int is_valid_pointer(userptr_t addr, struct addrspace *as){
-  unsigned int pointer = (unsigned int) addr;
-  if (pointer >= MIPS_KSEG0)
-    return 0;
-  if(!(((pointer >= as->as_vbase1) && (pointer < as->as_vbase1 + PAGE_SIZE*as->as_npages1))||
-  ((pointer >= as->as_vbase2) && (pointer < as->as_vbase2 + PAGE_SIZE*as->as_npages2))||
-  (pointer>=MIPS_KSEG0 - PAGE_SIZE*DUMBVM_STACKPAGES)))
-    return 0;
-  return 1;
-}
-
 int sys_waitpid(pid_t pid, int* statusp, int options, int *errp, bool is_kernel) {
   struct proc *p = proc_search_pid(pid);
   int s;

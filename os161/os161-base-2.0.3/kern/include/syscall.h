@@ -63,7 +63,6 @@ __DEAD void enter_new_process(int argc, userptr_t argv, userptr_t env,
 int sys_reboot(int code);
 int sys___time(userptr_t user_seconds, userptr_t user_nanoseconds);
 #if OPT_SHELL
-#define DUMBVM_STACKPAGES 18 //same value as kern/arch/mips/vm/dumbvm.c
 /* system open file table */
 struct openfile {
   struct vnode *vn;
