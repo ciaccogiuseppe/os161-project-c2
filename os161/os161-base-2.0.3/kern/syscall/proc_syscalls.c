@@ -191,7 +191,7 @@ int sys_fork(struct trapframe *ctf, pid_t *retval) {
 
 static int
 align_arg(char arg[ARG_MAX], int align){
-  int len = strlen(arg) +1 , diff;
+  int len = strlen(arg) + 1 , diff;
 
   if(len % align == 0)
     return len;
@@ -216,7 +216,7 @@ get_aligned_len(char arg[ARG_MAX], int align){
 
 static int
 copy_args(userptr_t uargs, int *nargs, int *buflen){
-  int i = 0, err, n_last = 0, argc = 0, len = 0;
+  int i = 0, err, n_last = 0, argc = 0, len = 0, arg_str_len_tot = 0;
   char *ptr;
   unsigned int *p_begin = NULL;
   unsigned char *p_end = NULL;
@@ -249,6 +249,12 @@ copy_args(userptr_t uargs, int *nargs, int *buflen){
     err = copyinstr((userptr_t)ptr, karg, sizeof(karg), NULL);
     if(err)
       return err;
+      
+    // Check if the total size of the argument strings exceeds ARG_MAX
+    arg_str_len_tot += (strlen(ptr) + 1);
+    if (arg_str_len_tot > ARG_MAX)
+      return E2BIG;  
+      
     offset = last_offset + n_last;
     n_last = align_arg(karg, 4);
     *p_begin = offset;
@@ -311,7 +317,13 @@ sys_execv(userptr_t program, userptr_t args, int *errp)
     *errp = EFAULT;
     return -1;
   }
+	
+  // Check if maximum path name length is exceeded
   int len = strlen((char*)program) + 1;
+  if (len > PATH_MAX) {
+    *errp = ENAMETOOLONG;
+    return -1;
+  }
 
   prg_path = kmalloc(len * sizeof(char));
   if(prg_path == NULL){
