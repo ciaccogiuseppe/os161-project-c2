@@ -178,6 +178,8 @@ int sys_fork(struct trapframe *ctf, pid_t *retval) {
   return 0;
 }
 
+/* It receive a string and the alignment and returns the len as the first greatest multiple of align.
+It also fills the remaining space with '\0' until it reaches a lenght of len+diff */
 static int
 align_arg(char arg[ARG_MAX], int align){
   int len = strlen(arg) + 1 , diff;
@@ -193,6 +195,7 @@ align_arg(char arg[ARG_MAX], int align){
   return len + diff;
 }
 
+/* It works like align_arg but it doesn't modify the string*/ 
 static int 
 get_aligned_len(char arg[ARG_MAX], int align){
   int len = strlen(arg) + 1;
@@ -203,6 +206,8 @@ get_aligned_len(char arg[ARG_MAX], int align){
   return len + (align - (len % align));
 }
 
+/* Copy the arguments from stack to kargbuf and return argc into nargs 
+and total length into buflen. The arguments are aligned on 32 bits */
 static int
 copy_args(userptr_t uargs, int *nargs, int *buflen){
   int i = 0, err, n_last = 0, argc = 0, len = 0, arg_str_len_tot = 0;
@@ -211,6 +216,7 @@ copy_args(userptr_t uargs, int *nargs, int *buflen){
   unsigned char *p_end = NULL;
   uint32_t offset, last_offset;
 
+  // Copy the argument and compute it's length
   while((err = copyin((userptr_t)uargs + i*4, &ptr, sizeof(ptr))) == 0){
     if(ptr == NULL)
       break;
@@ -220,11 +226,17 @@ copy_args(userptr_t uargs, int *nargs, int *buflen){
     i++;
     argc += 1;
     len += get_aligned_len(karg, 4) + sizeof(char*);
+    
+    // Check if the total size of the argument strings exceeds ARG_MAX
+    arg_str_len_tot += (strlen(ptr) + 1);
+    if (arg_str_len_tot > ARG_MAX)
+      return E2BIG;
   }
 
   if(err)
     return err;
 
+  // Add space for NULL pointer at the end of vector of pointer
   len += sizeof(char*);
 
   i = 0;
@@ -232,17 +244,13 @@ copy_args(userptr_t uargs, int *nargs, int *buflen){
   last_offset = (argc+1) * sizeof(char*);
   p_begin = (unsigned int *) kargbuf;
   p_end = kargbuf + last_offset;
+  // Copy the arguments in kargbuf and create the vector of indexes
   while((err = copyin((userptr_t)uargs + i*4, &ptr, sizeof(ptr))) == 0){
     if(ptr == NULL)
       break;
     err = copyinstr((userptr_t)ptr, karg, sizeof(karg), NULL);
     if(err)
       return err;
-      
-    // Check if the total size of the argument strings exceeds ARG_MAX
-    arg_str_len_tot += (strlen(ptr) + 1);
-    if (arg_str_len_tot > ARG_MAX)
-      return E2BIG;  
       
     offset = last_offset + n_last;
     n_last = align_arg(karg, 4);
@@ -259,6 +267,7 @@ copy_args(userptr_t uargs, int *nargs, int *buflen){
   if(err)
     return err;
 
+  // NULL pointer at the end of vector of indexes
   *p_begin = 0;
 
   *nargs = argc;
@@ -267,6 +276,8 @@ copy_args(userptr_t uargs, int *nargs, int *buflen){
   return 0;
 }
 
+/* It sobstitute the indexes with the pointers that the arguments
+ will have into the stack */
 static int 
 adjust_kargbuf(int n_params, vaddr_t stack_ptr){
   int i, index;
@@ -296,7 +307,7 @@ sys_execv(userptr_t program, userptr_t args, int *errp)
   KASSERT(curproc != NULL);
   KASSERT(curproc->p_numthreads == 1);
 
-
+  // Check parameters validity
   if(!is_valid_pointer(program, proc_getas())){
     *errp = EFAULT;
     return -1;
@@ -332,6 +343,7 @@ sys_execv(userptr_t program, userptr_t args, int *errp)
     return -1;
   }
 
+  // Update process name
   spinlock_acquire(&curproc->p_lock);
   kfree(curproc->p_name);
   curproc->p_name =prg_name;
@@ -343,6 +355,7 @@ sys_execv(userptr_t program, userptr_t args, int *errp)
     return -1;
   }
 
+  // Update thread name
   kfree(curthread->t_name);
   curthread->t_name = prg_name;
 
@@ -354,6 +367,7 @@ sys_execv(userptr_t program, userptr_t args, int *errp)
 		return -1;
 	}
 
+  // Copy arguments from user stack to kargbuf
   result = copy_args(args, &argc, &buflen);
   if(result){
     kfree(prg_path);
@@ -430,6 +444,7 @@ sys_execv(userptr_t program, userptr_t args, int *errp)
 		return -1;
 	}
 
+  // Update stack pointer and update vector of pointers in kargbuf
   stackptr -= buflen;
   result = adjust_kargbuf(argc, stackptr);
   if(result){
@@ -443,6 +458,7 @@ sys_execv(userptr_t program, userptr_t args, int *errp)
 		return -1;
   }
 
+  // Copy arguments from kargbuf to stack
   result = copyout(kargbuf, (userptr_t)stackptr, buflen);
   if(result){
     kfree(prg_path);
