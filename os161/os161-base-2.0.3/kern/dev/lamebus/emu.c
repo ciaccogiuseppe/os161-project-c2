@@ -53,6 +53,7 @@
 #include <platform/bus.h>
 #include <vfs.h>
 #include <emufs.h>
+#include <limits.h>
 #include "autoconf.h"
 
 /* Register offsets */
@@ -821,6 +822,59 @@ emufs_lookparent(struct vnode *dir, char *pathname, struct vnode **ret,
 	return emufs_lookup(dir, pathname, ret);
 }
 
+static
+int
+path_merge(char* dest, char* str1, char* str2){
+	int i = 0;
+	int j = 0;
+	while(str1[i] != '\0'){
+		dest[j++] = str1[i];
+		i++;
+	}
+	i = 0;
+	dest[j++] = '/';
+	while(str2[i] != '\0'){
+		dest[j++] = str2[i];
+		i++;
+	}
+	dest[j++] = '\0';
+	return j;
+}
+
+static
+int
+path_append_start(char* str1, char* str2){
+	int count1 = strlen(str1);
+	int count2 = strlen(str2);
+	char* tmpstr;
+	int i = 0;
+	int j;
+
+	tmpstr = kmalloc((count1+count2+2)*sizeof(char));
+	if(tmpstr == NULL){
+		return -1;
+	}
+	tmpstr[0] = '/';
+	
+	for (i = 0; i < count2; i++){
+		tmpstr[i+1] = str2[i];
+	}
+	i++;
+	if(count1 != 0){
+		j = 0;
+		while(i<count1+count2+2){
+			tmpstr[i] = str1[j++];
+			i++;
+		}
+	}
+	for(i = 0; i< count1+count2+1; i++){
+		str1[i] = tmpstr[i];
+	}
+	str1[i] = 0;
+	kfree(tmpstr);
+	return 0;
+}
+
 /*
  * VOP_NAMEFILE
  */
@@ -830,17 +884,110 @@ emufs_namefile(struct vnode *v, struct uio *uio)
 {
 	struct emufs_vnode *ev = v->vn_data;
 	struct emufs_fs *ef = v->vn_fs->fs_data;
-
+	
+	//int result;
 	if (ev == ef->ef_root) {
 		/*
 		 * Root directory - name is empty string
 		 */
 		return 0;
 	}
+	
+	struct vnode* vn;
+	struct vnode* v_to_find = v;
+	char* base;
+	char parent[3] = "..";
+	char* respath = kmalloc(PATH_MAX*sizeof(char));
+	if(respath == NULL){
+		return ENOMEM;
+	}
+	char* buffer = kmalloc(PATH_MAX*sizeof(char));
+	if(buffer == NULL){
+		kfree(respath);
+		return ENOMEM;
+	}
+	char* path = kmalloc(PATH_MAX*sizeof(char));
+	if(path == NULL){
+		kfree(respath);
+		kfree(buffer);
+		return ENOMEM;
+	}
+	for(int i = 0; i < PATH_MAX; i++){
+		respath[i] = 0;
+	}
+	
+	while(vn == NULL || vn->vn_data != ef->ef_root){
+		
+		struct vnode* vn2 = NULL;
+		emufs_lookup(v_to_find, parent, &vn);
+		
+		struct uio buf;
+		struct iovec vec;
+		
+		vec.iov_kbase = buffer;
+		vec.iov_len = PATH_MAX;
+		buf.uio_segflg = UIO_SYSSPACE;
+		buf.uio_iov = &vec;
+		buf.uio_iovcnt = 1;
+    	buf.uio_resid = PATH_MAX; 
+		buf.uio_offset = 0;
+		buf.uio_space = NULL;
+		buf.uio_rw = UIO_READ;
 
-	(void)uio;
+		base = (char*)buf.uio_iov->iov_kbase;
 
-	return ENOSYS;
+		while(vn2 != v_to_find){
+			if(vn2 != NULL){
+				VOP_DECREF(vn2);
+			}
+			for(int i=0; i<PATH_MAX; i++){
+				buffer[i]=0;
+			}
+			buf.uio_iov->iov_len = PATH_MAX;
+			buf.uio_resid = PATH_MAX;
+			emufs_getdirentry(vn, &buf);
+			path_merge(path, parent, buffer);
+			emufs_lookup(v_to_find, path, &vn2);
+			buf.uio_iov->iov_kbase = base;
+		}
+		if(strlen(respath)+strlen(buffer)+2 > PATH_MAX){
+			kfree(respath);
+			kfree(path);
+			kfree(buffer);
+			return ENAMETOOLONG;
+		}
+		
+		if (path_append_start(respath, buffer) == -1){
+			kfree(respath);
+			kfree(path);
+			kfree(buffer);
+			return ENOMEM;
+		}
+		
+		VOP_DECREF(v_to_find);
+		if(v_to_find != v->vn_data){
+			VOP_DECREF(v_to_find);
+		}
+		v_to_find = vn;
+
+	}
+	kfree(buffer);
+	kfree(path);
+
+	if (strlen(respath) + 1 > uio->uio_iov->iov_len){
+		kfree(respath);
+		return ERANGE;
+	}
+
+	int i = 0;
+	while(respath[i] != 0){
+		((char*)uio->uio_iov->iov_kbase)[i] = respath[i];
+		i++;
+	}
+	kfree(respath);
+	((char*)uio->uio_iov->iov_kbase)[i] = 0;
+	uio->uio_resid = i;
+	return 0;
 }
 
 /*

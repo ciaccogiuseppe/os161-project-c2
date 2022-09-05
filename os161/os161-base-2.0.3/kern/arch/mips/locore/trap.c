@@ -39,6 +39,8 @@
 #include <vm.h>
 #include <mainbus.h>
 #include <syscall.h>
+#include <kern/wait.h>
+#include <proc.h>
 
 
 /* in exception-*.S */
@@ -111,7 +113,19 @@ kill_curthread(vaddr_t epc, unsigned code, vaddr_t vaddr)
 	/*
 	 * You will probably want to change this.
 	 */
+	#if OPT_SHELL
+	curproc->p_exited = 1;
+	if(sig == SIGSEGV){
+		curproc->p_status = _MKWAIT_CORE(sig);
+	}
+	else{
+		curproc->p_status = _MKWAIT_SIG(sig);
+	}
 
+	thread_exit();
+	#endif
+
+	//should not return
 	kprintf("Fatal user mode trap %u sig %d (%s, epc 0x%x, vaddr 0x%x)\n",
 		code, sig, trapcodenames[code], epc, vaddr);
 	panic("I don't know how to handle this\n");

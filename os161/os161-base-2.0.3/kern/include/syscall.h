@@ -30,8 +30,12 @@
 #ifndef _SYSCALL_H_
 #define _SYSCALL_H_
 
-
+#include <types.h>
 #include <cdefs.h> /* for __DEAD */
+#include "opt-shell.h"
+#include <kern/stat.h>
+#include <synch.h>
+
 struct trapframe; /* from <machine/trapframe.h> */
 
 /*
@@ -58,5 +62,33 @@ __DEAD void enter_new_process(int argc, userptr_t argv, userptr_t env,
 
 int sys_reboot(int code);
 int sys___time(userptr_t user_seconds, userptr_t user_nanoseconds);
+#if OPT_SHELL
+/* system open file table */
+struct openfile {
+  struct vnode *vn;
+  off_t offset;	
+  unsigned int countRef;
+  int openflags;
+  struct lock *of_lock;
+};
+void sft_init(void);
+void openfileIncrRefCount(struct openfile *of);
+int std_open(int fileno);
+int sys_open(userptr_t path, int openflags, mode_t mode, int *errp);
+int sys_close(int fd, int *errp);
+int sys_write(int fd, userptr_t buf_ptr, size_t size, int *errp);
+int sys_read(int fd, userptr_t buf_ptr, size_t size, int *errp);
+void sys__exit(int status);
+int sys_waitpid(pid_t pid, int* statusp, int options, int *errp, bool is_kernel);
+pid_t sys_getpid(void);
+int sys_fork(struct trapframe *ctf, pid_t *retval);
+off_t sys_lseek(int fd, off_t pos, int whence, int *errp);
+int sys_dup2(int oldfd, int newfd, int *errp);
+int sys_chdir(userptr_t path, int *errp);
+int sys___getcwd(userptr_t buf_ptr, size_t buflen, int *errp);
+int sys_execv(userptr_t program, userptr_t args, int *errp);
+int sys_fstat(int fd, struct stat *statbuf, int *errp);
+int sys_getdirentry(int fd, char *buf, size_t buflen, int* errp);
+#endif
 
 #endif /* _SYSCALL_H_ */

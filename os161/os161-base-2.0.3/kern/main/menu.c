@@ -45,6 +45,8 @@
 #include <test.h>
 #include "opt-sfs.h"
 #include "opt-net.h"
+#include <syscall.h>
+#include <current.h>
 
 /*
  * In-kernel menu and command dispatcher.
@@ -79,19 +81,29 @@ cmd_progthread(void *ptr, unsigned long nargs)
 
 	KASSERT(nargs >= 1);
 
+	#if !OPT_SHELL
 	if (nargs > 2) {
 		kprintf("Warning: argument passing from menu not supported\n");
 	}
+	#endif
 
 	/* Hope we fit. */
 	KASSERT(strlen(args[0]) < sizeof(progname));
 
 	strcpy(progname, args[0]);
 
+	#if OPT_SHELL
+	result = runprogram(progname, (int) nargs, args);
+	#else
 	result = runprogram(progname);
+	#endif
+
 	if (result) {
 		kprintf("Running program %s failed: %s\n", args[0],
 			strerror(result));
+		#if OPT_SHELL
+		proc_signal_end(curproc);
+		#endif
 		return;
 	}
 
@@ -119,6 +131,11 @@ common_prog(int nargs, char **args)
 
 	/* Create a process for the new program to run in. */
 	proc = proc_create_runprogram(args[0] /* name */);
+	#if OPT_SHELL
+	if(proc == NULL && is_proc_table_full()){
+		return ENPROC;
+	}
+	#endif
 	if (proc == NULL) {
 		return ENOMEM;
 	}
@@ -132,6 +149,16 @@ common_prog(int nargs, char **args)
 		proc_destroy(proc);
 		return result;
 	}
+
+	#if OPT_SHELL
+	int err = 0, status;
+	result = sys_waitpid(proc->p_pid, &status, 0, &err, 1);
+	if(result < 0){
+		kprintf("waitpid failed: %s\n", strerror(err));
+		proc_destroy(proc);
+		return err;
+	}
+	#endif
 
 	/*
 	 * The new process will be destroyed when the program exits...

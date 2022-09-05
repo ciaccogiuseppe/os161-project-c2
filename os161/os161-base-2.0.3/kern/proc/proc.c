@@ -48,12 +48,123 @@
 #include <current.h>
 #include <addrspace.h>
 #include <vnode.h>
+#include <syscall.h>
+#include <kern/unistd.h>
+#include <vfs.h>
+#include <synch.h>
+
+#if OPT_SHELL
+#define MAX_PROC 100
+static struct _processTable {
+  // int active;           /* initial value 0 */
+  struct proc *proc[MAX_PROC+1]; /* [0] not used. pids are >= 1 */
+  int last_i;           /* index of last allocated pid */
+  struct spinlock lk;	/* Lock for this table */
+  bool is_full;
+} processTable;
+
+struct lock *ft_copy_lock;
+#endif
 
 /*
  * The process for the kernel; this holds all the kernel-only threads.
  */
 struct proc *kproc;
 
+#if OPT_SHELL
+bool
+is_proc_table_full(void){
+	bool tmp;
+	spinlock_acquire(&processTable.lk);
+	tmp = processTable.is_full;
+	spinlock_release(&processTable.lk);
+	return tmp;
+}
+/*
+ * G.Cabodi - 2019
+ * Initialize support for pid/waitpid.
+ */
+struct proc *
+proc_search_pid(pid_t pid) {
+  struct proc *p;
+  
+  // Check if the pid argument is valid (pid 0 is not used)
+  // The upper bound is MAX_PROC > PID_MAX
+  if (pid < PID_MIN || pid > MAX_PROC)
+	return NULL;
+
+  // KASSERT(pid>=0 && pid<MAX_PROC);
+
+  spinlock_acquire(&processTable.lk);
+  p = processTable.proc[pid];
+  spinlock_release(&processTable.lk);
+  if(p!=NULL)
+  	KASSERT(p->p_pid==pid);
+
+  return p;
+}
+
+/*
+ * G.Cabodi - 2019
+ * Initialize support for pid/waitpid.
+ */
+static void
+proc_init_waitpid(struct proc *proc, const char *name) {
+  /* search a free index in table using a circular strategy */
+  int i;
+  spinlock_acquire(&processTable.lk);
+  i = processTable.last_i+1;
+  proc->p_pid = 0;
+  if (i>MAX_PROC) i=1;
+  while (i!=processTable.last_i) {
+    if (processTable.proc[i] == NULL) {
+      processTable.proc[i] = proc;
+      processTable.last_i = i;
+      proc->p_pid = i;
+      break;
+    }
+    i++;
+    if (i>MAX_PROC) i=1;
+  }
+  if (proc->p_pid==0) {
+    // panic("too many processes. proc table is full\n");
+	processTable.is_full = true;
+	spinlock_release(&processTable.lk);
+	return;
+  }
+  spinlock_release(&processTable.lk);
+  proc->p_status = 0;
+#if USE_SEMAPHORE_FOR_WAITPID
+  proc->p_sem = sem_create(name, 0);
+#else
+  proc->p_cv = cv_create(name);
+  proc->p_cv_lock = lock_create(name);
+#endif
+}
+
+/*
+ * G.Cabodi - 2019
+ * Terminate support for pid/waitpid.
+ */
+static void
+proc_end_waitpid(struct proc *proc) {
+  /* remove the process from the table */
+  int i;
+  spinlock_acquire(&processTable.lk);
+  i = proc->p_pid;
+  KASSERT(i>0 && i<=MAX_PROC);
+  processTable.proc[i] = NULL;
+  processTable.is_full = false;
+  spinlock_release(&processTable.lk);
+
+#if USE_SEMAPHORE_FOR_WAITPID
+  sem_destroy(proc->p_sem);
+#else
+  cv_destroy(proc->p_cv);
+  lock_destroy(proc->p_cv_lock);
+#endif
+}
+#endif
 /*
  * Create a proc structure.
  */
@@ -78,9 +189,26 @@ proc_create(const char *name)
 
 	/* VM fields */
 	proc->p_addrspace = NULL;
-
+	
 	/* VFS fields */
 	proc->p_cwd = NULL;
+
+#if OPT_SHELL
+	// New fields
+	proc->p_exited = 0;
+	proc->parent_proc = NULL;
+	proc->ft_lock = lock_create(proc->p_name);
+
+	proc_init_waitpid(proc,name);
+	if(is_proc_table_full()){
+		kfree(proc->p_name);
+		spinlock_cleanup(&proc->p_lock);
+		lock_destroy(proc->ft_lock);
+		kfree(proc);
+		return NULL;
+	}
+    bzero(proc->fileTable,OPEN_MAX*sizeof(struct openfile *));	
+#endif
 
 	return proc;
 }
@@ -168,6 +296,30 @@ proc_destroy(struct proc *proc)
 	KASSERT(proc->p_numthreads == 0);
 	spinlock_cleanup(&proc->p_lock);
 
+	#if OPT_SHELL
+	proc_end_waitpid(proc);
+	for (int fd=0; fd<OPEN_MAX; fd++) {
+		struct openfile *of = proc->fileTable[fd];
+		if (of != NULL) {
+			lock_acquire(of->of_lock);
+			if (--of->countRef == 0){
+				if (of->vn != NULL){
+					vfs_close(of->vn);
+				}
+				lock_release(of->of_lock);
+				lock_destroy(of->of_lock);
+			}
+			else{
+				lock_release(of->of_lock);
+			}
+		}
+		
+		proc->fileTable[fd] = NULL;
+	}
+	
+	lock_destroy(proc->ft_lock);
+	#endif
+
 	kfree(proc->p_name);
 	kfree(proc);
 }
@@ -182,7 +334,16 @@ proc_bootstrap(void)
 	if (kproc == NULL) {
 		panic("proc_create for kproc failed\n");
 	}
+#if OPT_SHELL
+	spinlock_init(&processTable.lk);
+	processTable.is_full = false;
+	/* kernel process is not registered in the table */
+	// processTable.active = 1;
+	sft_init();
+	ft_copy_lock = lock_create("File Table Copy");
+#endif
 }
+
 
 /*
  * Create a fresh proc for use by runprogram.
@@ -199,11 +360,10 @@ proc_create_runprogram(const char *name)
 	if (newproc == NULL) {
 		return NULL;
 	}
-
 	/* VM fields */
 
 	newproc->p_addrspace = NULL;
-
+		
 	/* VFS fields */
 
 	/*
@@ -318,3 +478,61 @@ proc_setas(struct addrspace *newas)
 	spinlock_release(&proc->p_lock);
 	return oldas;
 }
+
+#if OPT_SHELL
+    /* G.Cabodi - 2019 - support for waitpid */
+int 
+proc_wait(struct proc *proc)
+{
+    int return_status;
+    /* NULL and kernel proc forbidden */
+	KASSERT(proc != NULL);
+	KASSERT(proc != kproc);
+
+    /* wait on semaphore or condition variable */ 
+#if USE_SEMAPHORE_FOR_WAITPID
+    P(proc->p_sem);
+#else
+    lock_acquire(proc->p_cv_lock);
+    cv_wait(proc->p_cv);
+    lock_release(proc->p_cv_lock);
+#endif
+    return_status = proc->p_status;
+    proc_destroy(proc);
+    return return_status;
+}
+
+
+/* G.Cabodi - 2019 - support for waitpid */
+void
+proc_signal_end(struct proc *proc)
+{
+#if USE_SEMAPHORE_FOR_WAITPID
+      V(proc->p_sem);
+#else
+      lock_acquire(proc->p_cv_lock);
+      cv_signal(proc->p_cv);
+      lock_release(proc->p_cv_lock);
+#endif
+}
+
+void 
+proc_file_table_copy(struct proc *psrc, struct proc *pdest) {
+  int fd;
+  lock_acquire(ft_copy_lock);
+  lock_acquire(psrc->ft_lock);
+  lock_acquire(pdest->ft_lock);
+  for (fd=0; fd<OPEN_MAX; fd++) {
+    struct openfile *of = psrc->fileTable[fd];
+    pdest->fileTable[fd] = of;
+    if (of != NULL) {
+      /* incr reference count */
+      openfileIncrRefCount(of);
+    }
+  }
+  lock_release(pdest->ft_lock);
+  lock_release(psrc->ft_lock);
+  lock_release(ft_copy_lock);
+}
+
+#endif

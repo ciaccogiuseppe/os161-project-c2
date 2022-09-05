@@ -387,6 +387,11 @@ file      syscall/time_syscalls.c
 file      main/main.c
 file      main/menu.c
 
+defoption shell
+optfile   shell syscall/file_syscalls.c
+optfile   shell syscall/dir_syscalls.c
+optfile   shell syscall/proc_syscalls.c
+
 ########################################
 #                                      #
 #             Filesystems              #
