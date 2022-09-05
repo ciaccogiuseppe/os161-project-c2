@@ -72,6 +72,7 @@ struct lock *ft_copy_lock;
 struct proc *kproc;
 
 #if OPT_SHELL
+/* Return the value of processTable.is_full */
 bool
 is_proc_table_full(void){
 	bool tmp;

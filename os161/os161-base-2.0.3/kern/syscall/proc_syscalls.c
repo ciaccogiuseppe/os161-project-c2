@@ -22,8 +22,8 @@
 #include <vfs.h>
 #include <kern/wait.h>
 
-static char karg[ARG_MAX];
-static unsigned char kargbuf[ARG_MAX];
+static char karg[ARG_MAX]; // tmp vector to store the single argument before copying it into kargbuf
+static unsigned char kargbuf[ARG_MAX]; // tmp vector to store the arguments before copying them into the stack
 
 /*
  * system calls for process management

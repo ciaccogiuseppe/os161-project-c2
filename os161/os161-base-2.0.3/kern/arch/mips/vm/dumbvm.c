@@ -71,6 +71,7 @@
 static struct spinlock stealmem_lock = SPINLOCK_INITIALIZER;
 
 #if OPT_SHELL
+/* Check if addr is conteined into addrspace as */
 int 
 is_valid_pointer(userptr_t addr, struct addrspace *as){
   unsigned int pointer = (unsigned int) addr;
