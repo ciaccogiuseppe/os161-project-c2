@@ -81,6 +81,24 @@ is_proc_table_full(void){
 	spinlock_release(&processTable.lk);
 	return tmp;
 }
+
+/* Remove the link to the parent (if it exits) from children processes */
+void proc_rm_parent_link(pid_t pid) {
+	int i;
+	struct proc *p;
+
+	KASSERT(!(pid < PID_MIN || pid > MAX_PROC));
+
+	spinlock_acquire(&processTable.lk);
+	for (i = 0; i <= MAX_PROC; i++) {
+		/* 	If the pointer to the parent process of the current element
+			has the same pid of the parameter, it must be a children */
+		p = processTable.proc[i];
+		if (p != NULL && p->parent_proc != NULL && p->parent_proc->p_pid == pid)
+			processTable.proc[i]->parent_proc = NULL;
+	}
+	spinlock_release(&processTable.lk);
+}
 /*
  * G.Cabodi - 2019
  * Initialize support for pid/waitpid.

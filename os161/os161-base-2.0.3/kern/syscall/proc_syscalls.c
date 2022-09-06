@@ -38,6 +38,7 @@ sys__exit(int status)
   p->p_exited = 1;
   spinlock_release(&p->p_lock);
   proc_remthread(curthread);
+  proc_rm_parent_link(p->p_pid);  // remove the link to this process in his childrens
   proc_signal_end(p);
   thread_exit();
 
@@ -476,8 +477,11 @@ sys_execv(userptr_t program, userptr_t args, int *errp)
   as_destroy(old_as);
   kfree(prg_path);
 
+  userptr_t argvptr = (userptr_t) stackptr;
+  stackptr &= 0xFFFFFFF8;
+
 	/* Warp to user mode. */
-	enter_new_process(argc /*argc*/, argc!=0?((userptr_t) stackptr):NULL /*userspace addr of argv*/,
+	enter_new_process(argc /*argc*/, argc!=0?argvptr:NULL /*userspace addr of argv*/,
 			    NULL /*userspace addr of environment*/,
 			    stackptr, entrypoint);
 

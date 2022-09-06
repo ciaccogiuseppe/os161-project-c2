@@ -135,5 +135,8 @@ void proc_signal_end(struct proc *proc);
 void proc_file_table_copy(struct proc *psrc, struct proc *pdest);
 
 bool is_proc_table_full(void);
+
+void proc_rm_parent_link(pid_t pid);
+
 #endif
 #endif /* _PROC_H_ */
