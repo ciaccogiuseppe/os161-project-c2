@@ -546,6 +546,7 @@ proc_file_table_copy(struct proc *psrc, struct proc *pdest) {
     pdest->fileTable[fd] = of;
     if (of != NULL) {
       /* incr reference count */
+	  VOP_INCREF(of->vn);
       openfileIncrRefCount(of);
     }
   }
