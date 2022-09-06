@@ -296,7 +296,6 @@ sys_open(userptr_t path, int openflags, mode_t mode, int *errp)
   struct vnode *v;
   struct openfile *of=NULL;; 	
   int result;
-  //char kbuf[PATH_MAX];
   char* kbuf;
 
   if(path == NULL){
@@ -420,45 +419,15 @@ int sys_close(int fd, int *errp) {
 int
 sys_write(int fd, userptr_t buf_ptr, size_t size, int *errp)
 {
-  //int i;
-  //char *p = (char *)buf_ptr;
-
   *errp=0;
   return file_write(fd, buf_ptr, size, errp);
-  /*
-  if ((fd!=STDOUT_FILENO && fd!=STDERR_FILENO)||
-    (fd==STDOUT_FILENO && (curproc->fileTable[STDOUT_FILENO])!=NULL)||
-    (fd==STDERR_FILENO && (curproc->fileTable[STDERR_FILENO])!=NULL)) {
-    
-  }
-
-  for (i=0; i<(int)size; i++) {
-    putch(p[i]);
-  }
-
-  return (int)size;*/
 }
 
 int
 sys_read(int fd, userptr_t buf_ptr, size_t size, int *errp)
 {
-  //int i;
-  //char *p = (char *)buf_ptr;
-
   *errp=0;
   return file_read(fd, buf_ptr, size, errp);
-  /*
-  if (fd!=STDIN_FILENO || (fd==STDIN_FILENO && (curproc->fileTable[STDIN_FILENO])!=NULL)) {
-    return file_read(fd, buf_ptr, size, errp);
-  }
-
-  for (i=0; i<(int)size; i++) {
-    p[i] = getch();
-    if (p[i] < 0) 
-      return i;
-  }
-
-  return (int)size;*/
 }
 
 off_t 
@@ -467,11 +436,6 @@ sys_lseek(int fd, off_t pos, int whence, int *errp){
   off_t new_offset = 0;
   struct stat st;
   int result;
-
-  /*if(fd >=0 && fd <= STDERR_FILENO){
-    *errp = ESPIPE;
-    return -1;
-  }*/
 
   if(fd < 0 || fd >= OPEN_MAX){
     *errp = EBADF;
@@ -553,7 +517,6 @@ sys_lseek(int fd, off_t pos, int whence, int *errp){
 int 
 sys_dup2(int oldfd, int newfd, int *errp){
   struct openfile *old_of, *new_of;
-  // int result;
   struct vnode *vn;
 
   if(oldfd < 0 || newfd < 0 || oldfd >= OPEN_MAX || newfd >= OPEN_MAX){
@@ -575,9 +538,7 @@ sys_dup2(int oldfd, int newfd, int *errp){
   }
 
   if(new_of != NULL){
-    // result = sys_close(newfd, errp);
-    // if(result==-1)
-    //   return -1;
+    // close the file
     curproc->fileTable[newfd] = NULL;
     lock_acquire(new_of->of_lock);
     if (--new_of->countRef > 0){
@@ -761,7 +722,4 @@ sys_getdirentry(int fd, char *buf, size_t buflen, int* errp)
     of->offset = u.uio_offset;
     lock_release(of->of_lock);
     return (buflen - u.uio_resid);
-
-
-    
 }

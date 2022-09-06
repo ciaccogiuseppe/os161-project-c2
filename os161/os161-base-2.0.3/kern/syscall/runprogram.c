@@ -120,12 +120,6 @@ runprogram(char *progname)
 	#if OPT_SHELL
 	vaddr_t argvptr;
 
-	/*
-	result = get_argv(argc, argv, &stackptr, &argvptr);
-	if(result){
-		return result;
-	}*/
-
 	// space for argv vector of pointers
 	stackptr -= (vaddr_t) ((argc+1)*sizeof(char*));
 
@@ -147,6 +141,7 @@ runprogram(char *progname)
 		}
 	}
 
+	// NULL pointer at the end of the vector of pointers
 	bzero((void*)(argvptr + argc*sizeof(char*)), sizeof(char*));
 
 	/* Warp to user mode. */

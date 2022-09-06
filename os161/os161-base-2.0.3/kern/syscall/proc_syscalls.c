@@ -299,9 +299,7 @@ sys_execv(userptr_t program, userptr_t args, int *errp)
 	struct addrspace *new_as, *old_as;
 	struct vnode *v;
 	vaddr_t entrypoint, stackptr;
-  // vaddr_t argv_ptr;
 	int result, argc, buflen;
-  //char prg_path[PATH_MAX];
   char* prg_path, *prg_name;
 
   KASSERT(curthread != NULL);
@@ -376,8 +374,6 @@ sys_execv(userptr_t program, userptr_t args, int *errp)
     *errp = result;
     return -1;
   }
-	/* We should be a new process. */
-	// KASSERT(proc_getas() == NULL);
 
 	/* Create a new address space. */
 	new_as = as_create();
@@ -392,30 +388,6 @@ sys_execv(userptr_t program, userptr_t args, int *errp)
   as_deactivate(); // do nothing
 	old_as = proc_setas(new_as);
 	as_activate();
-
-	/*
-  if (std_open(STDIN_FILENO) != STDIN_FILENO){
-    proc_setas(old_as);
-    as_activate();
-    as_destroy(new_as);
-    vfs_close(v);
-		return EIO;
-	}
-	if (std_open(STDOUT_FILENO) != STDOUT_FILENO){
-    proc_setas(old_as);
-    as_activate();
-    as_destroy(new_as);
-    vfs_close(v);
-		return EIO;
-	}
-	if (std_open(STDERR_FILENO) != STDERR_FILENO){
-    proc_setas(old_as);
-    as_activate();
-    as_destroy(new_as);
-    vfs_close(v);
-		return EIO;
-	}
-  */
 
 	/* Load the executable. */
 	result = load_elf(v, &entrypoint);
