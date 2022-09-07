@@ -41,7 +41,7 @@
 #if OPT_SHELL
 #define MAKE_64BITS(x,y) (((int64_t)x) << 32 | y)
 #define GET_LO(x) ((int32_t) x & 0x00000000FFFFFFFF)
-#define GET_HI(x) ((int32_t) x & 0xFFFFFFFF00000000)
+#define GET_HI(x) ((int32_t)(( x & 0xFFFFFFFF00000000)>>32))
 #endif
 
 /*

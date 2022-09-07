@@ -22,8 +22,8 @@
 #include <vfs.h>
 #include <kern/wait.h>
 
-static char karg[ARG_MAX];
-static unsigned char kargbuf[ARG_MAX];
+static char karg[ARG_MAX]; // tmp vector to store the single argument before copying it into kargbuf
+static unsigned char kargbuf[ARG_MAX]; // tmp vector to store the arguments before copying them into the stack
 
 /*
  * system calls for process management
@@ -38,6 +38,7 @@ sys__exit(int status)
   p->p_exited = 1;
   spinlock_release(&p->p_lock);
   proc_remthread(curthread);
+  proc_rm_parent_link(p->p_pid);  // remove the link to this process in his childrens
   proc_signal_end(p);
   thread_exit();
 
@@ -298,9 +299,7 @@ sys_execv(userptr_t program, userptr_t args, int *errp)
 	struct addrspace *new_as, *old_as;
 	struct vnode *v;
 	vaddr_t entrypoint, stackptr;
-  // vaddr_t argv_ptr;
 	int result, argc, buflen;
-  //char prg_path[PATH_MAX];
   char* prg_path, *prg_name;
 
   KASSERT(curthread != NULL);
@@ -375,8 +374,6 @@ sys_execv(userptr_t program, userptr_t args, int *errp)
     *errp = result;
     return -1;
   }
-	/* We should be a new process. */
-	// KASSERT(proc_getas() == NULL);
 
 	/* Create a new address space. */
 	new_as = as_create();
@@ -391,30 +388,6 @@ sys_execv(userptr_t program, userptr_t args, int *errp)
   as_deactivate(); // do nothing
 	old_as = proc_setas(new_as);
 	as_activate();
-
-	/*
-  if (std_open(STDIN_FILENO) != STDIN_FILENO){
-    proc_setas(old_as);
-    as_activate();
-    as_destroy(new_as);
-    vfs_close(v);
-		return EIO;
-	}
-	if (std_open(STDOUT_FILENO) != STDOUT_FILENO){
-    proc_setas(old_as);
-    as_activate();
-    as_destroy(new_as);
-    vfs_close(v);
-		return EIO;
-	}
-	if (std_open(STDERR_FILENO) != STDERR_FILENO){
-    proc_setas(old_as);
-    as_activate();
-    as_destroy(new_as);
-    vfs_close(v);
-		return EIO;
-	}
-  */
 
 	/* Load the executable. */
 	result = load_elf(v, &entrypoint);
@@ -476,8 +449,11 @@ sys_execv(userptr_t program, userptr_t args, int *errp)
   as_destroy(old_as);
   kfree(prg_path);
 
+  userptr_t argvptr = (userptr_t) stackptr;
+  stackptr &= 0xFFFFFFF8;
+
 	/* Warp to user mode. */
-	enter_new_process(argc /*argc*/, argc!=0?((userptr_t) stackptr):NULL /*userspace addr of argv*/,
+	enter_new_process(argc /*argc*/, argc!=0?argvptr:NULL /*userspace addr of argv*/,
 			    NULL /*userspace addr of environment*/,
 			    stackptr, entrypoint);
 

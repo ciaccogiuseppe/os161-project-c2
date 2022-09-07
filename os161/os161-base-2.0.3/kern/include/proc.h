@@ -131,9 +131,12 @@ int proc_wait(struct proc *proc);
 struct proc *proc_search_pid(pid_t pid);
 /* signal end/exit of process */
 void proc_signal_end(struct proc *proc);
-
+/* copy file table from proc psrc to proc pdest */
 void proc_file_table_copy(struct proc *psrc, struct proc *pdest);
-
+/* return true if process table is full */
 bool is_proc_table_full(void);
+/* Remove the link to the parent (if it exits) from children processes */
+void proc_rm_parent_link(pid_t pid);
+
 #endif
 #endif /* _PROC_H_ */
